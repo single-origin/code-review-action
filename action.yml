@@ -69,7 +69,7 @@ runs:
           // Save file list
           const fs = require('fs');
           fs.writeFileSync('/tmp/sql_files.txt', 
-            sqlFiles.map(f => f.filename).join('\n')
+            sqlFiles.map(f => f.filename).join('\n') + '\n'
           );
           
           console.log(`Found ${sqlFiles.length} SQL file(s)`);
@@ -187,11 +187,4 @@ runs:
       with:
         name: audit-results
         path: /tmp/audit_result.json
-        if-no-files-found: warn
-
-    - name: Upload sql files
-      uses: actions/upload-artifact@v4
-      with:
-        name: sql-files
-        path: /tmp/sql_files.txt
         if-no-files-found: warn

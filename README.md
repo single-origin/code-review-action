@@ -36,6 +36,6 @@ jobs:
           api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
 ```
 
-## Backend API
+## Backend Hostname
 
-This is an API endpoint that is specific to your deployment, contact Single Origin for the endpoint to use.
+This is the hostname for the API endpoint that is specific to your deployment, contact Single Origin for the hostname to use.

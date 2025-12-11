@@ -163,7 +163,7 @@ runs:
           comment += '### Audit Reports\n\n';
           
           audit_results.forEach(result => {
-            comment += "#### 📄 ${result.file}, processing status ${result.status}\n\n";
+            comment += `#### 📄 ${result.file}, processing status ${result.status}\n\n`;
             if (result.status === '200') {
               comment += '<details>\n';
               comment += '<summary>View Audit Details</summary>\n\n';

@@ -16,3 +16,4 @@ jobs:
         with:
           backend-hostname: ${{ secrets.SO_CODE_REVIEW_HOSTNAME }}
           api-key: ${{ secrets.SO_CODE_REVIEW_HOSTNAME }}
+          upload-artifact: 'true'

@@ -13,6 +13,10 @@ inputs:
   api-key:
     description: 'Your API key for authentication'
     required: true
+  upload-artifact:
+    description: 'Whether to upload raw result as artifact'
+    required: false
+    default: 'false'
   github-token:
     description: 'GitHub token for posting comments'
     required: false
@@ -172,3 +176,11 @@ runs:
             issue_number: context.issue.number,
             body: comment
           });
+
+    - name: Upload results
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: audit-results
+        path: /tmp/audit_result.json
+        if-no-files-found: warn

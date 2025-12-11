@@ -172,14 +172,14 @@ runs:
 
               comment += '#### Table Scan Report\n';
               audit.tableScanReports.forEach(scan => {
-                comment += '| Table | Cluster key used? | Filter by time-based columns? |\n`;
-                comment += '| --- | --- | --- |\n`;
+                comment += '| Table | Cluster key used? | Filter by time-based columns? |\n';
+                comment += '| --- | --- | --- |\n';
                 comment += `${scan.tableFqn}|${scan.clusterKeyUsage.isUsed?✅:❌}|${scan.timeBasedColumnUsage.isUsed?✅:❌}\n`;
               })
 
               comment += '#### Raw Report\n';
               comment += '```json\n';
-              comment += JSON.stringify(result.audit, null, 2);
+              comment += JSON.stringify(audit, null, 2);
               comment += '\n```\n\n';
               comment += '</details>\n\n';
             }

@@ -97,7 +97,7 @@ runs:
             '{storageType: $query_engine, sql: $content}')
           
           echo "Invoking API with hostname ${{ inputs.backend-hostname }}"
-          response=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.backend-hostname }}/api/v1/query/audit/sql" \
+          response=$(curl -s -w "\n%{http_code}" -X POST "https://${{ inputs.backend-hostname }}/api/v1/query/audit/sql" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ inputs.api-key }}" \
             -d "$payload")

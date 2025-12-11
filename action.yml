@@ -83,11 +83,11 @@ runs:
         echo '{"results": []}' > /tmp/audit_result.json
         
         while IFS= read -r file; do
+          echo "Auditing: $file"
           if [ ! -f "$file" ]; then
+            echo "$file not found, skipping"
             continue
           fi
-          
-          echo "Auditing: $file"
           
           content=$(cat "$file" | jq -Rs .)
           
@@ -187,4 +187,11 @@ runs:
       with:
         name: audit-results
         path: /tmp/audit_result.json
+        if-no-files-found: warn
+
+    - name: Upload sql files
+      uses: actions/upload-artifact@v4
+      with:
+        name: sql-files
+        path: /tmp/sql_files.txt
         if-no-files-found: warn

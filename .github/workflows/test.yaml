@@ -14,6 +14,6 @@ jobs:
       - name: Test SQL Audit Action
         uses: ./  # References the action in the current repo
         with:
-          backend-hostname: ${{ secrets.SO_CODE_REVIEW_HOSTNAME }}
+          backend-hostname: coinbase-staging-api.singleorigin.tech
           api-key: ${{ secrets.SO_CODE_REVIEW_HOSTNAME }}
           upload-artifact: 'true'

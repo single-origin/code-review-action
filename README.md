@@ -2,21 +2,6 @@
 
 Audits SQL files in pull requests to uncover inefficiencies
 
-## Usage
-
-```yaml
-- uses: single-origin/code-review-action@v1
-  with:
-    backend-hostname: ${{ secrets.SO_CODE_REVIEW_HOSTNAME }}
-    api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
-```
-
-## Inputs
-
-- `backend-hostname` (required): Single Origin backend API hostname
-- `api-key` (required): Your API key
-- `github-token` (optional): GitHub token for posting comments
-
 ## Example Workflow
 
 ```yaml
@@ -32,10 +17,14 @@ jobs:
     steps:
       - uses: single-origin/code-review-action@v1
         with:
-          backend-hostname: ${{ secrets.SO_CODE_REVIEW_HOSTNAME }}
+          backend-hostname: xxx-api.singleorigin.tech
           api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
 ```
 
-## Backend Hostname
+## Inputs
 
-This is the hostname for the API endpoint that is specific to your deployment, contact Single Origin for the hostname to use.
+- `backend-hostname` (required): Single Origin backend API hostname
+  - This is the hostname for the API endpoint that is specific to your deployment, contact Single Origin for the hostname to use.
+- `api-key` (required): Your API key
+  - The value shall be in the format of `{api_key_id}:{api_key_secret}` and base64-encoded.
+- `github-token` (optional): GitHub token for posting comments

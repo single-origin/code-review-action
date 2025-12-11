@@ -99,7 +99,7 @@ runs:
           echo "Invoking API with hostname ${{ inputs.backend-hostname }}"
           response=$(curl -s -w "\n%{http_code}" -X POST "https://${{ inputs.backend-hostname }}/api/v1/query/audit/sql" \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ inputs.api-key }}" \
+            -H "Authorization: Basic ${{ inputs.api-key }}" \
             -d "$payload")
           
           http_code=$(echo "$response" | tail -n1)
@@ -162,7 +162,7 @@ runs:
           comment += `**Files Audited:** ${audit_results.length}\n\n`;
           comment += '### Audit Reports\n\n';
           
-          audit_results.forEach(issue => {
+          audit_results.forEach(result => {
             comment += '#### 📄 ${result.file}\n\n';
             comment += '##### ${result.status}\n\n';
             comment += '<details>\n';

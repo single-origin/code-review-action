@@ -96,6 +96,7 @@ runs:
             --argjson content "$content" \
             '{storageType: $query_engine, sql: $content}')
           
+          echo "Invoking API with hostname ${{ inputs.backend-hostname }}"
           response=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.backend-hostname }}/api/v1/query/audit/sql" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ inputs.api-key }}" \
@@ -116,6 +117,8 @@ runs:
             echo "$merged" > /tmp/audit_result.json
             continue
           fi
+
+          echo "Invoked API successfully with hostname ${{ inputs.backend-hostname }}, processing result"
           
           audit_data=$(echo "$body" | jq '.data')
           

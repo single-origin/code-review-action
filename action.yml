@@ -158,19 +158,20 @@ runs:
             return
           }
 
-          let comment = '## 🔍 SQL Audit Results\n\n';
+          let comment = '## 🔍 Single Origin SQL Audit Results\n\n';
           comment += `**Files Audited:** ${audit_results.length}\n\n`;
           comment += '### Audit Reports\n\n';
           
           audit_results.forEach(result => {
-            comment += '#### 📄 ${result.file}\n\n';
-            comment += '##### ${result.status}\n\n';
-            comment += '<details>\n';
-            comment += '<summary>View Audit Details</summary>\n\n';
-            comment += '```json\n';
-            comment += JSON.stringify(result.audit, null, 2);
-            comment += '\n```\n\n';
-            comment += '</details>\n\n';
+            comment += "#### 📄 ${result.file}, processing status ${result.status}\n\n";
+            if (result.status === '200') {
+              comment += '<details>\n';
+              comment += '<summary>View Audit Details</summary>\n\n';
+              comment += '```json\n';
+              comment += JSON.stringify(result.audit, null, 2);
+              comment += '\n```\n\n';
+              comment += '</details>\n\n';
+            }
           });
           
           await github.rest.issues.createComment({

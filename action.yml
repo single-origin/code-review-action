@@ -167,7 +167,7 @@ runs:
             comment += `#### 📄 ${result.file}${isSuccess?'': ', processing failed'}\n\n`;
 
             if (!isSuccess) {
-              continue;
+              return;
             }
 
             comment += '<details>\n';

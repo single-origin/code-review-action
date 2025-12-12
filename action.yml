@@ -163,26 +163,30 @@ runs:
           comment += '### Audit Reports\n\n';
           
           audit_results.forEach(result => {
-            comment += `#### 📄 ${result.file}${result.status === '200'?'': ', processing failed'}\n\n`;
-            if (result.status === '200') {
-              comment += '<details>\n';
-              comment += '<summary>View Audit Details</summary>\n\n';
+            const isSuccess = result.status === '200';
+            comment += `#### 📄 ${result.file}${isSuccess?'': ', processing failed'}\n\n`;
 
-              const audit = result.audit;
-
-              comment += '#### Table Scan Report\n';
-              comment += '| Table | Cluster key used? | Filter by time-based columns? |\n';
-              comment += '| --- | --- | --- |\n';
-              audit.tableScanReports.forEach(scan => {
-                comment += `| ${scan.tableFqn} | ${scan.clusterKeyUsage.isUsed?✅:❌} | ${scan.timeBasedColumnUsage.isUsed?✅:❌} |\n`;
-              })
-
-              comment += '#### Raw Report\n';
-              comment += '```json\n';
-              comment += JSON.stringify(audit, null, 2);
-              comment += '\n```\n\n';
-              comment += '</details>\n\n';
+            if (!isSuccess) {
+              continue;
             }
+
+            comment += '<details>\n';
+            comment += '<summary>View Audit Details</summary>\n\n';
+
+            comment += '#### Table Scan Report\n';
+            comment += '| Table | Cluster key used? | Filter by time-based columns? |\n';
+            comment += '| --- | --- | --- |\n';
+
+            const audit = result.audit;
+            audit.tableScanReports.forEach(scan => {
+              comment += `| ${scan.tableFqn} | ${scan.clusterKeyUsage.isUsed?✅:❌} | ${scan.timeBasedColumnUsage.isUsed?✅:❌} |\n`;
+            })
+
+            comment += '#### Raw Report\n';
+            comment += '```json\n';
+            comment += JSON.stringify(audit, null, 2);
+            comment += '\n```\n\n';
+            comment += '</details>\n\n';
           });
           
           await github.rest.issues.createComment({

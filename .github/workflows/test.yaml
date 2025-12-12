@@ -14,6 +14,5 @@ jobs:
       - name: Test SQL Audit Action
         uses: ./  # References the action in the current repo
         with:
-          backend-hostname: coinbase-staging-api.singleorigin.tech
+          backend-url: http://host.docker.internal:8081
           api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
-          upload-artifact: 'true'

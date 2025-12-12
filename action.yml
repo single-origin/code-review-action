@@ -7,8 +7,8 @@ branding:
   color: 'blue'
 
 inputs:
-  backend-hostname:
-    description: 'Your backend API hostname'
+  backend-url:
+    description: 'Your backend API url'
     required: true
   api-key:
     description: 'Your API key for authentication'
@@ -96,11 +96,16 @@ runs:
             --argjson content "$content" \
             '{storageType: $query_engine, sql: $content}')
           
-          echo "Invoking API with hostname ${{ inputs.backend-hostname }}"
-          response=$(curl -s -w "\n%{http_code}" -X POST "https://${{ inputs.backend-hostname }}/api/v1/query/audit/sql" \
+          url="${{ inputs.backend-url }}/api/v1/query/audit/sql"
+          echo "Invoking API with url $url"
+
+          start=$(date +%s)
+          response=$(curl -s -w "\n%{http_code}" -X POST "$url" \
             -H "Content-Type: application/json" \
             -H "Authorization: Basic ${{ inputs.api-key }}" \
             -d "$payload")
+          end=$(date +%s)
+          echo "API duration: $(( end - start )) seconds"
           
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
@@ -118,7 +123,7 @@ runs:
             continue
           fi
 
-          echo "Invoked API successfully with hostname ${{ inputs.backend-hostname }}, processing result"
+          echo "Invoked API successfully with hostname ${{ inputs.backend-url }}, processing result"
           
           audit_data=$(echo "$body" | jq '.data')
           
@@ -164,28 +169,42 @@ runs:
           
           audit_results.forEach(result => {
             const isSuccess = result.status === '200';
-            comment += `#### 📄 ${result.file}${isSuccess?'': ', processing failed'}\n\n`;
 
             if (!isSuccess) {
+              comment += `⛔ **${result.file} audit failed**\n\n`;
               return;
             }
-
             comment += '<details>\n';
-            comment += '<summary>View Audit Details</summary>\n\n';
-
-            comment += '#### Table Scan Report\n';
-            comment += '| Table | Cluster key used? | Filter by time-based columns? |\n';
-            comment += '| --- | --- | --- |\n';
+            comment += `<summary><strong><ins>${result.file}</ins></strong></summary>\n\n`;
 
             const audit = result.audit;
+            if (!audit.aiReport || !audit.aiReport.isEnabled) {
+              comment += '#### 🔒 AI analysis not enabled for your deployment\n';
+            } else {
+              comment += '#### Overview\n';
+              comment += `${audit.aiReport.overview}\n`;
+
+              comment += '#### Recommendations\n';
+              audit.aiReport.recommendations.forEach(rec => {
+                comment += `- ${rec}\n`;
+              })
+
+              comment += '<details>\n';
+              comment += '<summary><strong>Suggested SQL</strong></summary>\n\n';
+              comment += '```sql\n';
+              comment += audit.aiReport.suggestedSql
+              comment += '\n```\n\n';
+              comment += '</details>\n\n';
+            }
+
+            comment += '#### Table Scan Report\n';
+            comment += '| Table | Cluster key used? | Time-based filter used? |\n';
+            comment += '| --- | --- | --- |\n';
+
             audit.tableScanReports.forEach(scan => {
-              comment += `| ${scan.tableFqn} | ${scan.clusterKeyUsage.isUsed?✅:❌} | ${scan.timeBasedColumnUsage.isUsed?✅:❌} |\n`;
+              comment += `| ${scan.tableFqn} | ${scan.clusterKeyUsage.isUsed? '✅':'❌'} | ${scan.timeBasedColumnUsage.isUsed? '✅':'❌'} |\n`;
             })
 
-            comment += '#### Raw Report\n';
-            comment += '```json\n';
-            comment += JSON.stringify(audit, null, 2);
-            comment += '\n```\n\n';
             comment += '</details>\n\n';
           });
           

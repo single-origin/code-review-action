@@ -14,5 +14,5 @@ jobs:
       - name: Test SQL Audit Action
         uses: ./  # References the action in the current repo
         with:
-          backend-url: ${{ vars.SO_CODE_REVIEW_URL }}
+          backend-url: ${{ secrets.SO_CODE_REVIEW_URL }}
           api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}

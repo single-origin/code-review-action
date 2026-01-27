@@ -2,17 +2,51 @@ name: Test Action
 
 on:
   pull_request:
+  pull_request_review_comment:
+    types: [created]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Test mode'
+        required: true
+        default: 'audit'
+        type: choice
+        options:
+          - audit
+          - agent
 
 jobs:
-  test:
+  # ===== Audit Mode Test =====
+  test-audit:
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'audit' ||
+      github.event_name == 'pull_request' && !vars.USE_AGENT_MODE
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Test SQL Audit Action
-        uses: ./  # References the action in the current repo
+        uses: ./
         with:
           backend-url: ${{ secrets.SO_CODE_REVIEW_URL }}
           api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
+
+  # ===== Agent Mode Test =====
+  test-agent:
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'agent' ||
+      (github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment') && vars.USE_AGENT_MODE == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test SQL Agent Action
+        uses: ./
+        with:
+          agent-api-url: ${{ secrets.SO_AGENT_URL }}
+          agent-api-key: ${{ secrets.SO_AGENT_API_KEY }}

@@ -128,12 +128,6 @@ There is a test GitHub workflow that reacts to PR push to this repo. Set up the 
 | `SO_AGENT_URL` | Agent | Agent API URL |
 | `SO_AGENT_API_KEY` | Agent | Agent API key |
 
-### Repository Variables
-
-| Variable | Description |
-|----------|-------------|
-| `USE_AGENT_MODE` | Set to `true` to enable Agent mode in test workflow |
-
 ### Local Emulation
 
 Use [act](https://github.com/nektos/act) and [gh](https://github.com/cli/cli) for local testing:

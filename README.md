@@ -1,71 +1,22 @@
-# Code Review GitHub Action
+# SQL Code Review Agent
 
-SQL audit and conversational agent review for pull requests.
+AI-powered SQL code review GitHub Action with conversation support.
 
-## Modes
+## Features
 
-This action supports two modes:
+- Automatically reviews SQL files in Pull Requests
+- Supports follow-up conversations in review comment threads
+- Smart handoff to humans when other users are mentioned
+- Re-engage with `@sql-agent` after handoff
 
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **Audit** | Static SQL analysis with structured reports | Batch analysis of SQL files with table scan reports |
-| **Agent** | AI-powered conversational review | Interactive code review with follow-up questions |
+## Usage
 
-## Audit Mode (Default)
+### Basic Setup
 
-Audits SQL files in pull requests to uncover inefficiencies.
-
-### Example Workflow
+Add this to your repository's workflow file (e.g., `.github/workflows/sql-review.yml`):
 
 ```yaml
-name: Single Origin Code Review
-on:
-  pull_request:
-    paths:
-      - '**.sql'
-
-jobs:
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: single-origin/code-review-action@v2
-        with:
-          backend-url: ${{ secrets.SO_CODE_REVIEW_URL }}
-          api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
-```
-
-### Inputs (Audit Mode)
-
-| Input | Required | Description |
-|-------|----------|-------------|
-| `backend-url` | Yes | Single Origin backend API URL |
-| `api-key` | Yes | API key (format: `{api_key_id}:{api_key_secret}`, base64-encoded) |
-| `upload-artifact` | No | Whether to upload raw result as artifact (default: `false`) |
-| `github-token` | No | GitHub token for posting comments |
-
-### Outputs
-
-| Output | Description |
-|--------|-------------|
-| `sqls-processed` | Number of SQL files processed |
-
----
-
-## Agent Mode
-
-AI-powered conversational SQL review with follow-up question support.
-
-### Features
-
-- Initial SQL file review on PR open/update
-- Reply to review comments for interactive conversation
-- Human handoff when other users are mentioned
-- Re-engage with `@sql-agent`
-
-### Example Workflow
-
-```yaml
-name: SQL Agent Review
+name: SQL Code Review
 on:
   pull_request:
     types: [opened, synchronize]
@@ -78,77 +29,77 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+
     steps:
+      - uses: actions/checkout@v4
+
       - uses: single-origin/code-review-action@v2
         with:
           agent-api-url: ${{ secrets.SO_AGENT_URL }}
           agent-api-key: ${{ secrets.SO_AGENT_API_KEY }}
 ```
 
-### Inputs (Agent Mode)
+### Inputs
 
-| Input | Required | Description |
-|-------|----------|-------------|
-| `agent-api-url` | Yes | Agent API endpoint URL |
-| `agent-api-key` | No | API key for agent authentication |
-| `github-token` | No | GitHub token for posting comments |
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `agent-api-url` | URL of the Agent API endpoint | Yes | - |
+| `agent-api-key` | API key for agent authentication | Yes | - |
+| `github-token` | GitHub token for posting comments | No | `${{ github.token }}` |
 
-### Conversation Flow
+### Secrets Configuration
+
+Go to your repo **Settings > Secrets and variables > Actions** and add:
+
+| Secret Name | Value |
+|-------------|-------|
+| `SO_AGENT_URL` | SO Agent API URL (e.g., `https://your-api.example.com`) |
+| `SO_AGENT_API_KEY` |  API key for authentication |
+
+## How It Works
+
+```
+┌──────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  PR Created  │────>│  GitHub Action  │────>│   Agent API     │
+│  or Comment  │     │  (this action)  │     │  /api/agent/chat│
+└──────────────┘     └────────┬────────┘     └────────┬────────┘
+                              │                       │
+                              │   POST /api/agent/chat
+                              │   {conversationId, message}
+                              │                       │
+                              │<──────────────────────┘
+                              │   {response: "..."}
+                              │
+                     ┌────────▼────────┐
+                     │  Post Comment   │
+                     │  on PR          │
+                     └─────────────────┘
+```
+
+## SQL File Detection
+
+The action reviews files that end with `.sql`.
+
+## Conversation Flow
 
 1. **Initial Review**: When a PR is opened or updated, the agent reviews SQL files and posts inline comments
 2. **Follow-up**: Reply to the agent's comment to ask questions
 3. **Handoff**: Mention another user (e.g., `@teammate`) to involve humans; agent steps back
 4. **Re-engage**: Reply with `@sql-agent` to bring the agent back into the conversation
 
----
-
-## Mode Detection
-
-The action automatically detects which mode to use:
-
-- If `backend-url` + `api-key` are provided → **Audit Mode**
-- If `agent-api-url` is provided → **Agent Mode**
-
-**Note**: You cannot specify both configurations simultaneously.
-
----
-
 ## Development
 
-### Pushing PR
+### Testing
 
-There is a test GitHub workflow that reacts to PR push to this repo. Set up the specified secrets, and push a PR to test.
+This repository includes a test workflow. To test:
+
+1. Create a PR with SQL file changes
+2. The action will automatically review the SQL files
+3. Reply in the comment thread to test follow-up conversations
 
 ### Required Secrets
 
-| Secret | Mode | Description |
-|--------|------|-------------|
-| `SO_CODE_REVIEW_URL` | Audit | Backend API URL |
-| `SO_CODE_REVIEW_API_KEY` | Audit | API key (base64-encoded) |
-| `SO_AGENT_URL` | Agent | Agent API URL |
-| `SO_AGENT_API_KEY` | Agent | Agent API key |
-
-### Local Emulation
-
-Use [act](https://github.com/nektos/act) and [gh](https://github.com/cli/cli) for local testing:
-
-```bash
-# Login with gh
-gh auth login
-
-# Run workflow locally
-act -e context.json -s SO_CODE_REVIEW_URL=xxx -s SO_CODE_REVIEW_API_KEY=xxx pull_request
-```
-
-Example `context.json`:
-```json
-{
-  "issue": {
-    "number": 1
-  },
-  "repository": {
-    "owner": { "login": "your-username" },
-    "name": "your-repo"
-  }
-}
-```
+| Secret | Description |
+|--------|-------------|
+| `SO_AGENT_URL` | Agent API URL |
+| `SO_AGENT_API_KEY` | Agent API key |

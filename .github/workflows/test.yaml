@@ -5,42 +5,16 @@ on:
   pull_request_review_comment:
     types: [created]
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Test mode'
-        required: true
-        default: 'audit'
-        type: choice
-        options:
-          - audit
-          - agent
 
 jobs:
-  test-audit:
-    if: github.event.inputs.mode != 'agent'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Test SQL Audit Action
-        uses: ./
-        with:
-          backend-url: ${{ secrets.SO_CODE_REVIEW_URL }}
-          api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
-
-  test-agent:
-    if: github.event.inputs.mode == 'agent'
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Test SQL Agent Action
-        uses: ./
+      - uses: actions/checkout@v4
+      - uses: ./
         with:
-          agent-api-url: ${{ secrets.SO_AGENT_URL }}
-          agent-api-key: ${{ secrets.SO_AGENT_API_KEY }}
+          agent-api-url: ${{ secrets.SO_CODE_REVIEW_URL }} # change to actual agent api url in github secrets
+          agent-api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}

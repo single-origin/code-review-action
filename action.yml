@@ -23,19 +23,13 @@ runs:
   steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
-    - name: Get PR info
-      id: pr
+    - name: Validate event type
       shell: bash
       run: |
-        if [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-        else
-          echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          echo "head_sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+        if [ "${{ github.event_name }}" != "pull_request" ] && [ "${{ github.event_name }}" != "pull_request_review_comment" ]; then
+          echo "⚠️ Unsupported event: ${{ github.event_name }}, exiting"
+          exit 1
         fi
 
     - name: Review SQL files
@@ -56,8 +50,8 @@ runs:
             pull_number: context.payload.pull_request.number
           });
 
-          // Filter SQL files
-          const sqlFiles = files.filter(f => f.filename.endsWith('.sql'));
+          // Filter SQL files (skip removed files)
+          const sqlFiles = files.filter(f => f.filename.endsWith('.sql') && f.status !== 'removed');
 
           if (sqlFiles.length === 0) {
             console.log('No SQL files changed in this PR');
@@ -80,11 +74,6 @@ runs:
           }
 
           for (const file of sqlFiles) {
-            if (file.status === 'removed') {
-              console.log(`Skipping removed file: ${file.filename}`);
-              continue;
-            }
-
             console.log(`Analyzing: ${file.filename}`);
 
             // Get file content
@@ -96,23 +85,18 @@ runs:
               continue;
             }
 
-            // Build conversation ID per file
-            const conversationId = `pr-${repoName}-${prNumber}-${file.filename}`;
-
             // Call Agent API
-            const message = `Review: ${file.filename}
-
-          \`\`\`sql
-          ${sqlContent}
-          \`\`\``;
-
             try {
-              const response = await fetch(`${process.env.AGENT_API_URL}/api/agent/chat`, {
+              const response = await fetch(`${process.env.AGENT_API_URL}/api/v1/query/audit/sql/chat`, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({
-                  conversationId: conversationId,
-                  message: message
+                  message: `Review this SQL file: ${file.filename}`,
+                  sql_context: {
+                    sql: sqlContent,
+                    storage_type: 'STORAGE_TYPE_SNOWFLAKE'
+                  },
+                  history: []
                 })
               });
 
@@ -123,7 +107,7 @@ runs:
               }
 
               const data = await response.json();
-              const agentResponse = data.response;
+              const agentResponse = data.response?.content;
 
               if (agentResponse && !agentResponse.startsWith('Error')) {
                 // Parse patch to find the actual line number in the new file
@@ -215,10 +199,9 @@ runs:
                 currentCommentId = c.in_reply_to_id;
               }
 
-              // Check if root comment is from Agent (Bot type or contains Agent signature)
+              // Check if root comment is from Agent
               if (rootComment) {
-                isInAgentThread = rootComment.user.type === 'Bot' ||
-                                  rootComment.body.includes('🤖 **SQL Review**');
+                isInAgentThread = rootComment.user.type === 'Bot';
                 console.log(`Root comment ID: ${rootComment.id}, user type: ${rootComment.user.type}, isInAgentThread: ${isInAgentThread}`);
               }
 
@@ -310,7 +293,7 @@ runs:
 
             if (originalSqlContent) {
               threadHistory.push({
-                role: 'user',
+                role: 'MESSAGE_ROLE_USER',
                 content: `Review: ${comment.path}\n\n\`\`\`sql\n${originalSqlContent}\n\`\`\``
               });
             }
@@ -348,7 +331,7 @@ runs:
             const threadMessages = threadComments
               .filter(c => c.id !== comment.id)
               .map(c => ({
-                role: c.user.type === 'Bot' ? 'assistant' : 'user',
+                role: c.user.type === 'Bot' ? 'MESSAGE_ROLE_ASSISTANT' : 'MESSAGE_ROLE_USER',
                 content: c.user.type === 'Bot'
                   ? c.body.replace(/^🤖\s*/g, '').trim()
                   : c.body
@@ -360,9 +343,8 @@ runs:
 
           // Proceed with reply
           const userMessage = comment.body.replace(/@sql-agent/gi, '').trim();
-          const conversationId = `pr-${repoName}-${prNumber}-${comment.path}`;
 
-          console.log(`Processing reply for conversation: ${conversationId}`);
+          console.log(`Processing reply for file: ${comment.path}`);
           console.log(`User message: ${userMessage}`);
 
           // Build headers
@@ -374,14 +356,26 @@ runs:
             headers['Authorization'] = `Bearer ${process.env.AGENT_API_KEY}`;
           }
 
+          // Read SQL content for sql_context
+          let sqlContentForReply = '';
           try {
-            const response = await fetch(`${process.env.AGENT_API_URL}/api/agent/chat`, {
+            const { execSync } = require('child_process');
+            sqlContentForReply = execSync(`git show HEAD:${comment.path}`, { encoding: 'utf8' });
+          } catch (e) {
+            console.log(`Could not read SQL file for context: ${e.message}`);
+          }
+
+          try {
+            const response = await fetch(`${process.env.AGENT_API_URL}/api/v1/query/audit/sql/chat`, {
               method: 'POST',
               headers: headers,
               body: JSON.stringify({
-                conversationId: conversationId,
                 message: userMessage,
-                messages: threadHistory  // Pass conversation history from GitHub thread
+                sql_context: {
+                  sql: sqlContentForReply,
+                  storage_type: 'STORAGE_TYPE_SNOWFLAKE'
+                },
+                history: threadHistory
               })
             });
 
@@ -391,7 +385,7 @@ runs:
             }
 
             const data = await response.json();
-            const agentResponse = data.response;
+            const agentResponse = data.response?.content;
 
             if (agentResponse && !agentResponse.startsWith('Error')) {
               // Reply to the review comment thread

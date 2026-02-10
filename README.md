@@ -20,6 +20,8 @@ name: SQL Code Review
 on:
   pull_request:
     types: [opened, synchronize]
+    paths:
+      - '**.sql'
   pull_request_review_comment:
     types: [created]
 
@@ -31,9 +33,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: single-origin/code-review-action@v2
+      - uses: single-origin/code-review-action@v1
         with:
           agent-api-url: ${{ secrets.SO_AGENT_URL }}
           agent-api-key: ${{ secrets.SO_AGENT_API_KEY }}
@@ -61,14 +61,13 @@ Go to your repo **Settings > Secrets and variables > Actions** and add:
 ```
 ┌──────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │  PR Created  │────>│  GitHub Action  │────>│   Agent API     │
-│  or Comment  │     │  (this action)  │     │  /api/agent/chat│
+│  or Comment  │     │  (this action)  │     │   (endpoint)    │
 └──────────────┘     └────────┬────────┘     └────────┬────────┘
                               │                       │
-                              │   POST /api/agent/chat
-                              │   {conversationId, message}
+                              │   POST review request │
                               │                       │
                               │<──────────────────────┘
-                              │   {response: "..."}
+                              │   review response     │
                               │
                      ┌────────▼────────┐
                      │  Post Comment   │
@@ -96,6 +95,33 @@ This repository includes a test workflow. To test:
 1. Create a PR with SQL file changes
 2. The action will automatically review the SQL files
 3. Reply in the comment thread to test follow-up conversations
+
+### Local Emulation
+
+The above method runs the main action code in the actual Github environment that accrues cost and subjects to resource availability and start-up delay.  The local emulation with `act` can be helpful for quicker iterations.
+
+- Install [act](https://github.com/nektos/act) and [gh](https://github.com/cli/cli).
+- Get a local auth token with `gh`
+  - `gh auth login`
+- Push a PR
+  - We still need to push a PR with test files because currently the action only works with PR
+- Run workflow locally
+  - `act -e {context_json_file} -s {secret_1} -s {secret_2} pull_request`
+    - `context_json_file` is a JSON file that contains context data such as PR number, sample file content
+
+      ```
+      {
+        "issue": {
+          "number": 1
+        },
+        "repository": {
+          "owner": { "login": "your-username" },
+          "name": "your-repo"
+        }
+      }
+      ```
+
+    - `secret_1` and `secret_2` are whatever the secrets are needed for the test action
 
 ### Required Secrets
 

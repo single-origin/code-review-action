@@ -1,0 +1,224 @@
+name: 'Code Review'
+description: 'Audits SQL files in PRs'
+author: 'Single Origin'
+
+branding:
+  icon: 'database'
+  color: 'blue'
+
+inputs:
+  backend-url:
+    description: 'Your backend API url'
+    required: true
+  api-key:
+    description: 'Your API key for authentication'
+    required: true
+  upload-artifact:
+    description: 'Whether to upload raw result as artifact'
+    required: false
+    default: 'false'
+  github-token:
+    description: 'GitHub token for posting comments'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  sqls-processed:
+    description: 'Number of sql(s) processed'
+    value: ${{ steps.audit.outputs.sqls-processed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check if PR event
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" != "pull_request" ]; then
+          echo "⚠️ This action is designed for pull_request events only, exiting"
+          echo "Current event: ${{ github.event_name }}"
+          exit 9
+        fi
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get changed SQL files via GitHub API
+      id: changed-files
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          
+          const sqlFiles = files.filter(f => 
+            f.filename.endsWith('.sql') && 
+            f.status !== 'removed'
+          );
+          
+          if (sqlFiles.length === 0) {
+            core.setOutput('count', '0');
+            console.log('No SQL files changed');
+            return;
+          }
+          
+          core.setOutput('count', sqlFiles.length.toString());
+          
+          // Save file list
+          const fs = require('fs');
+          fs.writeFileSync('/tmp/sql_files.txt', 
+            sqlFiles.map(f => f.filename).join('\n') + '\n'
+          );
+          
+          console.log(`Found ${sqlFiles.length} SQL file(s)`);
+
+
+    - name: Audit SQL files
+      id: audit
+      if: steps.changed-files.outputs.count != '0'
+      shell: bash
+      run: |
+        echo '{"results": []}' > /tmp/audit_result.json
+        
+        while IFS= read -r file; do
+          echo "Auditing: $file"
+          if [ ! -f "$file" ]; then
+            echo "$file not found, skipping"
+            continue
+          fi
+          
+          content=$(cat "$file" | jq -Rs .)
+          
+          payload=$(jq -n \
+            --arg query_engine "STORAGE_TYPE_SNOWFLAKE" \
+            --argjson content "$content" \
+            '{storageType: $query_engine, sql: $content}')
+          
+          url="${{ inputs.backend-url }}/api/v1/query/audit/sql"
+          echo "Invoking API with url $url"
+
+          start=$(date +%s)
+          response=$(curl -s -w "\n%{http_code}" -X POST "$url" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Basic ${{ inputs.api-key }}" \
+            -d "$payload")
+          end=$(date +%s)
+          echo "API duration: $(( end - start )) seconds"
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          if [ "$http_code" != "200" ]; then
+            echo "Error auditing $file: Backend returned status $http_code"
+            echo "$body"
+
+            existing=$(cat /tmp/audit_result.json)
+            merged=$(echo "$existing" | jq \
+              --arg file "$file" \
+              --arg status "$http_code" \
+              '.results += [{"file": $file, "status": $status}]')
+            echo "$merged" > /tmp/audit_result.json
+            continue
+          fi
+
+          echo "Invoked API successfully with hostname ${{ inputs.backend-url }}, processing result"
+          
+          audit_data=$(echo "$body" | jq '.data')
+          
+          existing=$(cat /tmp/audit_result.json)
+          
+          merged=$(echo "$existing" | jq \
+            --arg file "$file" \
+            --arg status "$http_code" \
+            --argjson audit "$audit_data" \
+            '.results += [{"file": $file, "status": $status, "audit": $audit}]')
+          echo "$merged" > /tmp/audit_result.json
+          
+        done < /tmp/sql_files.txt
+        
+        sqls_processed=$(cat /tmp/audit_result.json | jq '.results | length' )
+        
+        echo "sqls-processed=$sqls_processed" >> $GITHUB_OUTPUT
+        echo "Audit complete"
+
+    - name: Post comments on PR
+      if: steps.changed-files.outputs.count != '0'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const saved_result = JSON.parse(fs.readFileSync('/tmp/audit_result.json', 'utf8'));
+          
+          const audit_results = [];
+          
+          for (const result of saved_result.results) {
+            audit_results.push(result);
+          }
+          
+          if (audit_results.length === 0) {
+            console.log('No sql processed');
+            return
+          }
+
+          let comment = '## 🔍 Single Origin SQL Audit Results\n\n';
+          comment += `**Files Audited:** ${audit_results.length}\n\n`;
+          comment += '### Audit Reports\n\n';
+          
+          audit_results.forEach(result => {
+            const isSuccess = result.status === '200';
+
+            if (!isSuccess) {
+              comment += `⛔ **${result.file} audit failed**\n\n`;
+              return;
+            }
+            comment += '<details>\n';
+            comment += `<summary><strong><ins>${result.file}</ins></strong></summary>\n\n`;
+
+            const audit = result.audit;
+            if (!audit.aiReport || !audit.aiReport.isEnabled) {
+              comment += '#### 🔒 AI analysis not enabled for your deployment\n';
+            } else {
+              comment += '#### Overview\n';
+              comment += `${audit.aiReport.overview}\n`;
+
+              comment += '#### Recommendations\n';
+              audit.aiReport.recommendations.forEach(rec => {
+                comment += `- ${rec}\n`;
+              })
+
+              comment += '<details>\n';
+              comment += '<summary><strong>Suggested SQL</strong></summary>\n\n';
+              comment += '```sql\n';
+              comment += audit.aiReport.suggestedSql
+              comment += '\n```\n\n';
+              comment += '</details>\n\n';
+            }
+
+            comment += '#### Table Scan Report\n';
+            comment += '| Table | Cluster key used? | Time-based filter used? |\n';
+            comment += '| --- | --- | --- |\n';
+
+            audit.tableScanReports.forEach(scan => {
+              comment += `| ${scan.tableFqn} | ${scan.clusterKeyUsage.isUsed? '✅':'❌'} | ${scan.timeBasedColumnUsage.isUsed? '✅':'❌'} |\n`;
+            })
+
+            comment += '</details>\n\n';
+          });
+          
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: comment
+          });
+
+    - name: Upload results
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: audit-results
+        path: /tmp/audit_result.json
+        if-no-files-found: warn

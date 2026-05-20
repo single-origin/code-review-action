@@ -1,0 +1,23 @@
+{
+  "action": "synchronize",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "title": "Add new feature",
+    "head": {
+      "sha": "cded2d10231a4c43187f12550c415eca462d78cc"
+    },
+    "user": {
+      "login": "developer"
+    }
+  },
+  "before": "abc1234567890",
+  "after": "new1234567890",
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "full_name": "test-owner/test-repo"
+  }
+}

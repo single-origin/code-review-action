@@ -1,0 +1,20 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 2,
+    "title": "Add new feature",
+    "head": {
+      "sha": "3a624c2bb99e7da36e3e1d285ec46b05bf671eea"
+    },
+    "user": {
+      "login": "developer"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "full_name": "test-owner/test-repo"
+  }
+}

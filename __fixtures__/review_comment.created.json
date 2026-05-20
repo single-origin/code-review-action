@@ -1,0 +1,31 @@
+{
+  "action": "created",
+  "comment": {
+    "id": 3276025676,
+    "body": "Can you explain why this variable is mutable?",
+    "path": "src/main.ts",
+    "line": 10,
+    "user": {
+      "login": "developer"
+    },
+    "created_at": "2026-01-01T00:00:00Z",
+    "in_reply_to_id": 3275972535
+  },
+  "pull_request": {
+    "number": 2,
+    "head": {
+      "sha": "3a624c2bb99e7da36e3e1d285ec46b05bf671eea"
+    },
+    "base": {
+      "sha": "def4567890abc",
+      "ref": "main"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "full_name": "test-owner/test-repo"
+  }
+}

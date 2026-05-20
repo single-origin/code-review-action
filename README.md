@@ -1,63 +1,120 @@
 # Code Review GitHub Action
 
-Audits SQL files in pull requests to uncover inefficiencies
+AI-powered code review by Single Origin. Reviews pull request files and posts
+inline comments. Supports reply threading for follow-up conversations.
 
-## Example Workflow
+## Setup
+
+Add this workflow to your repository at `.github/workflows/review.yml`:
 
 ```yaml
-name: Single Origin Code Review
+name: Code Review
 on:
   pull_request:
-    paths:
-      - '**.sql'
+    types: [opened]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('review-{0}', github.event.pull_request.number)
+        || format('reply-{0}-{1}', github.event.pull_request.number,
+    github.event.comment.id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  audit:
+  review:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
     steps:
       - uses: single-origin/code-review-action@v1
         with:
-          backend-url: https://xxx-api.singleorigin.tech
-          api-key: ${{ secrets.SO_CODE_REVIEW_API_KEY }}
+          backend-url: ${{ secrets.SO_BACKEND_URL }}
+          api-key: ${{ secrets.SO_API_KEY }}
 ```
 
 ## Inputs
 
-- `backend-url` (required): Single Origin backend API url
-  - This is the url for the API endpoint that is specific to your deployment, contact Single Origin for the url to use.
-- `api-key` (required): Your API key
-  - The value shall be in the format of `{api_key_id}:{api_key_secret}` and base64-encoded.
-- `github-token` (optional): GitHub token for posting comments
+| Input             | Required | Default        | Description                                      |
+| ----------------- | -------- | -------------- | ------------------------------------------------ |
+| `backend-url`     | Yes      |                | Backend API base URL                             |
+| `api-key`         | Yes      |                | API key (`id:secret`, base64-encoded)            |
+| `github-token`    | No       | `github.token` | GitHub token for API calls                       |
+| `timeout-seconds` | No       | `300`          | Backend request timeout in seconds               |
+| `upload-artifact` | No       | `false`        | Upload raw result JSON as artifact for debugging |
+
+## How It Works
+
+### PR Review (`pull_request` event)
+
+1. Lists changed files via GitHub API (paginated)
+2. Filters out binary, deleted, and generated files
+3. Fetches full file content for each reviewable file
+4. Sends files to backend (`POST /api/v1/code-review/review`)
+5. Posts inline review comments on the PR
+
+### Reply Threading (`pull_request_review_comment` event)
+
+1. Detects when a user replies to a bot-generated comment
+2. Fetches the full conversation thread and file content
+3. Sends context to backend (`POST /api/v1/code-review/reply`)
+4. Posts a threaded reply
+
+### File Filtering
+
+Automatically skipped:
+
+- Binary files
+- Deleted files
+- Generated/vendor files (`node_modules/`, `vendor/`, `dist/`, `*.min.js`, lock
+  files, `*.pb.go`, etc.)
+
+### Security
+
+- Uses `pull_request` trigger only (safe from fork injection attacks)
+- API key is masked in logs via `core.setSecret()`
+- `GITHUB_TOKEN` scoped to minimum permissions (`pull-requests: write`,
+  `contents: read`)
+
+### Concurrency
+
+- PR reviews: cancel-in-progress (rapid pushes cancel stale reviews)
+- Reply threads: independent runs per comment
+
+### Fork PRs
+
+Fork PRs do not receive reviews. The `pull_request` trigger provides a read-only
+`GITHUB_TOKEN` and no access to repo secrets for fork PRs.
 
 ## Development
 
-### Pushing PR
+```bash
+npm install
+npm run test         # jest unit tests
+npm run package      # rollup bundle to dist/
+npm run lint         # eslint
+npm run format:write # prettier --write
+npm run format:check # prettier --check
+npm run all          # format + lint + test + package
+```
 
-There is a test github workflow that reacts to PR push to this repo.  Set up the specified secrets, and push a PR to test.
+The `dist/index.js` file is committed. After making changes, run
+`npm run package` and commit the updated `dist/`.
 
-### Local Emulation
+### Local Testing with local-action
 
-The above method runs the main action code in the actual Github environment that accrues cost and subjects to resource availability and start-up delay.  The local emulation with `act` can be helpful for quicker iterations.
+Test against your local backend using
+[`@github/local-action`](https://github.com/github/local-action):
 
-- Install [act](https://github.com/nektos/act) and [gh](https://github.com/cli/cli).
-- Get a local auth token with `gh`
-  - `gh auth login`
-- Push a PR
-  - We still need to push a PR with test files because currently the action only works with PR
-- Run workflow locally
-  - `act -e {context_json_file} -s {secret_1} -s {secret_2} pull_request`
-    - `context_json_file` is a JSON file that contains context data such as PR number, sample file content
+1. Copy `.env.example` to `.env` and fill in your values
+2. Run: `npm run local-action`
 
-      ```
-      {
-        "issue": {
-          "number": 1
-        },
-        "repository": {
-          "owner": { "login": "your-username" },
-          "name": "your-repo"
-        }
-      }
-      ```
+## TODO
 
-    - `secret_1` and `secret_2` are whatever the secrets are needed for the test action
+- [ ] Incremental reviews: on `synchronize` events, use the compare API
+      (`GET /compare/{before}...{after}`) to send only newly changed files with
+      `REVIEW_SCOPE_INCREMENTAL`, and include existing bot comment threads for
+      context

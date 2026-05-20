@@ -1,0 +1,32 @@
+{
+  "action": "created",
+  "comment": {
+    "id": 101,
+    "body": "<!-- single-origin-code-review -->\nThis looks fine.",
+    "path": "src/main.ts",
+    "line": 10,
+    "user": {
+      "login": "github-actions[bot]"
+    },
+    "created_at": "2026-01-01T00:01:00Z",
+    "in_reply_to_id": 99
+  },
+  "pull_request": {
+    "number": 1,
+    "head": {
+      "sha": "abc1234567890",
+      "ref": "feature-branch"
+    },
+    "base": {
+      "sha": "def4567890abc",
+      "ref": "main"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "test-owner"
+    },
+    "name": "test-repo",
+    "full_name": "test-owner/test-repo"
+  }
+}

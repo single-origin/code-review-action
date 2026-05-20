@@ -33296,11 +33296,10 @@ const GENERATED_PATTERNS = [
 const CONCURRENCY_LIMIT = 10;
 
 function shouldSkipComment(comment, thread) {
-    if (comment.user?.login === BOT_LOGIN) {
+    if (comment.user.login === BOT_LOGIN) {
         return 'bot_author';
     }
-    if (typeof comment.body === 'string' &&
-        comment.body.includes(COMMENT_MARKER)) {
+    if (comment.body.includes(COMMENT_MARKER)) {
         return 'marked_comment';
     }
     if (thread) {
@@ -33597,12 +33596,7 @@ async function handleReviewComment(inputs) {
     const octokit = getOctokit(inputs.githubToken);
     const { owner, repo } = context.repo;
     const payload = context.payload;
-    const comment = payload.comment;
-    const pr = payload.pull_request;
-    if (!comment || !pr) {
-        setFailed('No comment or pull_request in event payload');
-        return;
-    }
+    const { comment, pull_request: pr } = payload;
     const earlySkip = shouldSkipComment(comment);
     if (earlySkip) {
         info(`Skipping: ${earlySkip}`);

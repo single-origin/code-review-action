@@ -1,5 +1,6 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
+import { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
 import { COMMENT_MARKER, CONCURRENCY_LIMIT } from './constants.js'
 import { shouldSkip } from './filters.js'
 import {
@@ -13,12 +14,19 @@ import {
 
 type Octokit = ReturnType<typeof github.getOctokit>
 
+type CreateReviewComment = NonNullable<
+  RestEndpointMethodTypes['pulls']['createReview']['parameters']['comments']
+>[number]
+
+type DiffEntry =
+  RestEndpointMethodTypes['pulls']['listFiles']['response']['data'][number]
+
 interface FetchResult {
   files: ReviewFile[]
   skipped: SkippedFile[]
 }
 
-function toReviewFileStatus(status: string): ReviewFileStatus {
+function toReviewFileStatus(status: DiffEntry['status']): ReviewFileStatus {
   switch (status) {
     case 'added':
       return ReviewFileStatus.ADDED
@@ -149,19 +157,11 @@ async function getFileContentViaBlob(
   return data.content
 }
 
-export interface GitHubReviewComment {
-  path: string
-  body: string
-  side: 'RIGHT'
-  line: number
-  start_line?: number
-}
-
 export function mapCommentsForReview(
   comments: ReviewComment[]
-): GitHubReviewComment[] {
+): CreateReviewComment[] {
   return comments.map((c) => {
-    const comment: GitHubReviewComment = {
+    const comment: CreateReviewComment = {
       path: c.path,
       body: `${COMMENT_MARKER}\n${c.body}`,
       side: 'RIGHT',

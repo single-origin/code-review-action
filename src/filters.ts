@@ -1,14 +1,15 @@
+import { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
 import { GENERATED_PATTERNS } from './constants.js'
 
-interface PullsFileItem {
-  filename: string
-  status: string
-  patch?: string
-  additions: number
-  deletions: number
-}
+type DiffEntry =
+  RestEndpointMethodTypes['pulls']['listFiles']['response']['data'][number]
 
-export function isBinary(file: PullsFileItem): boolean {
+type FileInfo = Pick<
+  DiffEntry,
+  'filename' | 'status' | 'patch' | 'additions' | 'deletions'
+>
+
+export function isBinary(file: FileInfo): boolean {
   return !file.patch && file.additions === 0 && file.deletions === 0
 }
 
@@ -28,7 +29,7 @@ export function isGenerated(filename: string): boolean {
   return false
 }
 
-export function shouldSkip(file: PullsFileItem): string | null {
+export function shouldSkip(file: FileInfo): string | null {
   if (isBinary(file)) return 'binary'
   if (file.status === 'removed') return 'removed'
   if (isGenerated(file.filename)) return 'generated'

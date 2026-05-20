@@ -444,19 +444,6 @@ describe('run()', () => {
       expect(mockPostReply).not.toHaveBeenCalled()
       expect(mockSetFailed).not.toHaveBeenCalled()
     })
-
-    it('fails when payload has no comment', async () => {
-      mockContext.payload = {
-        pull_request: reviewCommentPayload.pull_request,
-        repository: reviewCommentPayload.repository
-      }
-
-      await run()
-
-      expect(mockSetFailed).toHaveBeenCalledWith(
-        'No comment or pull_request in event payload'
-      )
-    })
   })
 
   describe('unsupported event', () => {

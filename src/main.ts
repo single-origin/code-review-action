@@ -1,6 +1,7 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import * as fs from 'fs/promises'
+import { PullRequestReviewCommentCreatedEvent } from '@octokit/webhooks-types'
 import { callReview, callReply } from './backend.js'
 import { shouldSkipComment } from './loop-prevention.js'
 import {
@@ -110,14 +111,9 @@ async function handlePullRequest(inputs: ActionInputs): Promise<void> {
 async function handleReviewComment(inputs: ActionInputs): Promise<void> {
   const octokit = github.getOctokit(inputs.githubToken)
   const { owner, repo } = github.context.repo
-  const payload = github.context.payload
+  const payload = github.context.payload as PullRequestReviewCommentCreatedEvent
 
-  const comment = payload.comment
-  const pr = payload.pull_request
-  if (!comment || !pr) {
-    core.setFailed('No comment or pull_request in event payload')
-    return
-  }
+  const { comment, pull_request: pr } = payload
 
   const earlySkip = shouldSkipComment(comment)
   if (earlySkip) {

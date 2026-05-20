@@ -1,60 +1,49 @@
 import { describe, expect, it } from '@jest/globals'
+import type { PullRequestReviewComment } from '@octokit/webhooks-types'
 import { shouldSkipComment } from '../src/loop-prevention'
 import { COMMENT_MARKER, BOT_LOGIN } from '../src/constants'
 import type { ThreadComment } from '../src/types'
 
+const comment = (
+  overrides: Partial<Pick<PullRequestReviewComment, 'user' | 'body'>>
+) =>
+  ({
+    user: { login: 'developer' },
+    body: 'hello',
+    ...overrides
+  }) as PullRequestReviewComment
+
 describe('shouldSkipComment', () => {
   describe('author check', () => {
     it('skips comments from the bot', () => {
-      expect(
-        shouldSkipComment({ user: { login: BOT_LOGIN }, body: 'hello' })
-      ).toBe('bot_author')
+      expect(shouldSkipComment(comment({ user: { login: BOT_LOGIN } }))).toBe(
+        'bot_author'
+      )
     })
 
     it('does not skip comments from other users', () => {
-      expect(
-        shouldSkipComment({ user: { login: 'developer' }, body: 'hello' })
-      ).toBeNull()
-    })
-
-    it('handles missing user gracefully', () => {
-      expect(shouldSkipComment({ body: 'hello' })).toBeNull()
-    })
-
-    it('handles missing login gracefully', () => {
-      expect(shouldSkipComment({ user: {}, body: 'hello' })).toBeNull()
+      expect(shouldSkipComment(comment({}))).toBeNull()
     })
   })
 
   describe('marker check', () => {
     it('skips comments containing the marker', () => {
       expect(
-        shouldSkipComment({
-          user: { login: 'developer' },
-          body: `${COMMENT_MARKER}\nSome review text`
-        })
+        shouldSkipComment(
+          comment({ body: `${COMMENT_MARKER}\nSome review text` })
+        )
       ).toBe('marked_comment')
     })
 
     it('does not skip comments without the marker', () => {
       expect(
-        shouldSkipComment({
-          user: { login: 'developer' },
-          body: 'Just a regular comment'
-        })
+        shouldSkipComment(comment({ body: 'Just a regular comment' }))
       ).toBeNull()
-    })
-
-    it('handles missing body gracefully', () => {
-      expect(shouldSkipComment({ user: { login: 'developer' } })).toBeNull()
     })
   })
 
   describe('thread check', () => {
-    const userComment = {
-      user: { login: 'developer' },
-      body: 'Why did you flag this?'
-    }
+    const userComment = comment({ body: 'Why did you flag this?' })
 
     it('skips when thread has no bot comments', () => {
       const thread: ThreadComment[] = [
@@ -128,7 +117,10 @@ describe('shouldSkipComment', () => {
       ]
 
       expect(
-        shouldSkipComment({ user: { login: BOT_LOGIN }, body: 'hi' }, thread)
+        shouldSkipComment(
+          comment({ user: { login: BOT_LOGIN }, body: 'hi' }),
+          thread
+        )
       ).toBe('bot_author')
     })
 
@@ -144,10 +136,7 @@ describe('shouldSkipComment', () => {
 
       expect(
         shouldSkipComment(
-          {
-            user: { login: 'developer' },
-            body: `${COMMENT_MARKER}\nmarked`
-          },
+          comment({ body: `${COMMENT_MARKER}\nmarked` }),
           thread
         )
       ).toBe('marked_comment')

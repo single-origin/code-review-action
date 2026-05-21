@@ -1,0 +1,28 @@
+name: Code Review
+on:
+  pull_request:
+    types: [opened]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('review-{0}', github.event.pull_request.number)
+        || format('reply-{0}-{1}', github.event.pull_request.number,
+    github.event.comment.id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          backend-url: ${{ secrets.SO_BACKEND_URL }}
+          api-key: ${{ secrets.SO_API_KEY }}
+          timeout-seconds: '300'

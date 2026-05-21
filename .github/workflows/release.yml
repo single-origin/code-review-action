@@ -26,5 +26,7 @@ jobs:
 
       - name: Move major version tag
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -fa ${{ steps.version.outputs.major }} -m "Release ${{ steps.version.outputs.tag }}"
           git push origin ${{ steps.version.outputs.major }} --force

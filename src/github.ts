@@ -69,7 +69,8 @@ export async function fetchFilesForReview(
   owner: string,
   repo: string,
   pullNumber: number,
-  headSha: string
+  headSha: string,
+  fileFilter?: string
 ): Promise<FetchResult> {
   const allFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
     owner,
@@ -82,7 +83,7 @@ export async function fetchFilesForReview(
   const toFetch: typeof allFiles = []
 
   for (const file of allFiles) {
-    const reason = shouldSkip(file)
+    const reason = shouldSkip(file, fileFilter)
     if (reason) {
       skipped.push({ filename: file.filename, reason })
     } else {

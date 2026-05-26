@@ -89,5 +89,6 @@ export interface ActionInputs {
   apiKey: string
   githubToken: string
   timeoutSeconds: number
+  fileFilter: string
   uploadArtifact: boolean
 }

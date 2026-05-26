@@ -21,6 +21,12 @@ inputs:
     description: 'Backend request timeout in seconds'
     required: false
     default: '300'
+  file-filter:
+    description:
+      'Glob inclusion filter for file paths (only matching files are reviewed).
+      Set to empty string to match nothing.'
+    required: false
+    default: '**/*.sql'
   upload-artifact:
     description: 'Upload raw result as artifact for debugging'
     required: false

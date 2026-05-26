@@ -95,6 +95,7 @@ beforeEach(async () => {
       'api-key': 'test-key',
       'github-token': 'ghp_test',
       'timeout-seconds': '300',
+      'file-filter': '**/*.sql',
       'upload-artifact': 'false'
     }
     return inputs[name] ?? ''
@@ -180,7 +181,8 @@ describe('run()', () => {
         'test-owner',
         'test-repo',
         prOpenedPayload.pull_request.number,
-        prOpenedPayload.pull_request.head.sha
+        prOpenedPayload.pull_request.head.sha,
+        '**/*.sql'
       )
       expect(mockCallReview).toHaveBeenCalledWith(
         expect.objectContaining({ backendUrl: 'http://localhost:8080' }),
@@ -290,6 +292,7 @@ describe('run()', () => {
           'api-key': 'test-key',
           'github-token': 'ghp_test',
           'timeout-seconds': '300',
+          'file-filter': '**/*.sql',
           'upload-artifact': 'true'
         }
         return inputs[name] ?? ''

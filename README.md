@@ -38,13 +38,14 @@ jobs:
 
 ## Inputs
 
-| Input             | Required | Default        | Description                                      |
-| ----------------- | -------- | -------------- | ------------------------------------------------ |
-| `backend-url`     | Yes      |                | Backend API base URL                             |
-| `api-key`         | Yes      |                | API key (`id:secret`, base64-encoded)            |
-| `github-token`    | No       | `github.token` | GitHub token for API calls                       |
-| `timeout-seconds` | No       | `300`          | Backend request timeout in seconds               |
-| `upload-artifact` | No       | `false`        | Upload raw result JSON as artifact for debugging |
+| Input             | Required | Default        | Description                                                             |
+| ----------------- | -------- | -------------- | ----------------------------------------------------------------------- |
+| `backend-url`     | Yes      |                | Backend API base URL                                                    |
+| `api-key`         | Yes      |                | API key (`id:secret`, base64-encoded)                                   |
+| `github-token`    | No       | `github.token` | GitHub token for API calls                                              |
+| `timeout-seconds` | No       | `300`          | Backend request timeout in seconds                                      |
+| `file-filter`     | No       | `**/*.sql`     | Glob inclusion filter for file paths (only matching files are reviewed) |
+| `upload-artifact` | No       | `false`        | Upload raw result JSON as artifact for debugging                        |
 
 ## How It Works
 
@@ -65,7 +66,18 @@ jobs:
 
 ### File Filtering
 
-Automatically skipped:
+Only files matching the `file-filter` glob pattern are reviewed (default:
+`**/*.sql`). Examples:
+
+- `**/*.sql` — all SQL files
+- `**/*.{sql,py}` — SQL and Python files
+- `src/**/*.sql` — SQL files under `src/`
+- `**/{db,migrations}/**/*.sql` — SQL files in `db/` or `migrations/`
+  directories
+
+Set to empty string to match nothing.
+
+Additionally, these are always skipped:
 
 - Binary files
 - Deleted files

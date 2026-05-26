@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
 import { GENERATED_PATTERNS } from './constants.js'
 
@@ -29,9 +30,11 @@ export function isGenerated(filename: string): boolean {
   return false
 }
 
-export function shouldSkip(file: FileInfo): string | null {
+export function shouldSkip(file: FileInfo, fileFilter?: string): string | null {
   if (isBinary(file)) return 'binary'
   if (file.status === 'removed') return 'removed'
   if (isGenerated(file.filename)) return 'generated'
+  if (fileFilter !== undefined && !path.matchesGlob(file.filename, fileFilter))
+    return 'filtered'
   return null
 }

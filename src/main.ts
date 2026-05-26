@@ -28,6 +28,7 @@ function getInputs(): ActionInputs {
     apiKey,
     githubToken: core.getInput('github-token', { required: true }),
     timeoutSeconds: parseInt(core.getInput('timeout-seconds') || '300', 10),
+    fileFilter: core.getInput('file-filter'),
     uploadArtifact: core.getInput('upload-artifact') === 'true'
   }
 }
@@ -57,7 +58,8 @@ async function handlePullRequest(inputs: ActionInputs): Promise<void> {
     owner,
     repo,
     pullNumber,
-    headSha
+    headSha,
+    inputs.fileFilter
   )
 
   if (skipped.length > 0) {

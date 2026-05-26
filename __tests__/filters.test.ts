@@ -103,4 +103,210 @@ describe('shouldSkip', () => {
       })
     ).toBeNull()
   })
+
+  it('returns "filtered" when file does not match inclusion filter', () => {
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/handler.ts',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 3,
+          deletions: 1
+        },
+        '**/*.sql'
+      )
+    ).toBe('filtered')
+  })
+
+  it('returns null when file matches inclusion filter', () => {
+    expect(
+      shouldSkip(
+        {
+          filename: 'migrations/001_create_users.sql',
+          status: 'added',
+          patch: '@@ -0,0 +1,5 @@',
+          additions: 5,
+          deletions: 0
+        },
+        '**/*.sql'
+      )
+    ).toBeNull()
+  })
+
+  it('returns null when no inclusion filter is provided', () => {
+    expect(
+      shouldSkip({
+        filename: 'src/handler.ts',
+        status: 'modified',
+        patch: '@@ -1 +1 @@',
+        additions: 3,
+        deletions: 1
+      })
+    ).toBeNull()
+  })
+
+  it('filters everything when file-filter is empty string', () => {
+    expect(
+      shouldSkip(
+        {
+          filename: 'migrations/001_create_users.sql',
+          status: 'added',
+          patch: '@@ -0,0 +1,5 @@',
+          additions: 5,
+          deletions: 0
+        },
+        ''
+      )
+    ).toBe('filtered')
+  })
+
+  it('matches files in a specific directory with glob', () => {
+    const filter = 'db/migrations/*'
+    expect(
+      shouldSkip(
+        {
+          filename: 'db/migrations/001_create_users.sql',
+          status: 'added',
+          patch: '@@ -0,0 +1,5 @@',
+          additions: 5,
+          deletions: 0
+        },
+        filter
+      )
+    ).toBeNull()
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/handler.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 3,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBe('filtered')
+  })
+
+  it('matches nested directory paths with glob', () => {
+    const filter = 'src/db/*.sql'
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/db/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBeNull()
+    expect(
+      shouldSkip(
+        {
+          filename: 'other/db/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBe('filtered')
+  })
+
+  it('matches glob directory paths with glob', () => {
+    const filter = 'src/**/*.sql'
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/db/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBeNull()
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/db/migration/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBeNull()
+    expect(
+      shouldSkip(
+        {
+          filename: 'other/db/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBe('filtered')
+  })
+  it('matches glob single directory paths with glob', () => {
+    const filter = 'src/*/*.sql'
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/db/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBeNull()
+    expect(
+      shouldSkip(
+        {
+          filename: 'src/db/migration/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBe('filtered')
+    expect(
+      shouldSkip(
+        {
+          filename: 'other/db/queries.sql',
+          status: 'modified',
+          patch: '@@ -1 +1 @@',
+          additions: 1,
+          deletions: 1
+        },
+        filter
+      )
+    ).toBe('filtered')
+  })
+
+  it('matches multiple extensions with brace expansion', () => {
+    const filter = '**/*.{sql,py}'
+    const file = (filename: string) => ({
+      filename,
+      status: 'modified' as const,
+      patch: '@@ -1 +1 @@',
+      additions: 1,
+      deletions: 1
+    })
+    expect(shouldSkip(file('db/query.sql'), filter)).toBeNull()
+    expect(shouldSkip(file('scripts/run.py'), filter)).toBeNull()
+    expect(shouldSkip(file('src/app.ts'), filter)).toBe('filtered')
+  })
 })

@@ -33,6 +33,7 @@ import require$$5$3 from 'string_decoder';
 import 'child_process';
 import 'timers';
 import * as fs$1 from 'fs/promises';
+import path from 'node:path';
 
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -33332,13 +33333,15 @@ function isGenerated(filename) {
     }
     return false;
 }
-function shouldSkip(file) {
+function shouldSkip(file, fileFilter) {
     if (isBinary(file))
         return 'binary';
     if (file.status === 'removed')
         return 'removed';
     if (isGenerated(file.filename))
         return 'generated';
+    if (fileFilter !== undefined && !path.matchesGlob(file.filename, fileFilter))
+        return 'filtered';
     return null;
 }
 
@@ -33373,7 +33376,7 @@ async function limitConcurrency(tasks, limit) {
     await Promise.all(workers);
     return results;
 }
-async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha) {
+async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, fileFilter) {
     const allFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
         owner,
         repo,
@@ -33383,7 +33386,7 @@ async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha) {
     const skipped = [];
     const toFetch = [];
     for (const file of allFiles) {
-        const reason = shouldSkip(file);
+        const reason = shouldSkip(file, fileFilter);
         if (reason) {
             skipped.push({ filename: file.filename, reason });
         }
@@ -33533,6 +33536,7 @@ function getInputs() {
         apiKey,
         githubToken: getInput('github-token', { required: true }),
         timeoutSeconds: parseInt(getInput('timeout-seconds') || '300', 10),
+        fileFilter: getInput('file-filter'),
         uploadArtifact: getInput('upload-artifact') === 'true'
     };
 }
@@ -33552,7 +33556,7 @@ async function handlePullRequest(inputs) {
     const headSha = pr.head.sha;
     const fullName = `${owner}/${repo}`;
     info(`Reviewing PR #${pullNumber} (${headSha})`);
-    const { files, skipped } = await fetchFilesForReview(octokit, owner, repo, pullNumber, headSha);
+    const { files, skipped } = await fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, inputs.fileFilter);
     if (skipped.length > 0) {
         info(`Skipped ${skipped.length} file(s)`);
     }

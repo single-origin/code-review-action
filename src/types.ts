@@ -90,5 +90,6 @@ export interface ActionInputs {
   githubToken: string
   timeoutSeconds: number
   fileFilter: string
+  postComment: boolean
   uploadArtifact: boolean
 }

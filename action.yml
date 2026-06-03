@@ -27,6 +27,10 @@ inputs:
       Set to empty string to match nothing.'
     required: false
     default: '**/*.sql'
+  post-comment:
+    description: 'Post review comments to the pull request'
+    required: false
+    default: 'true'
   upload-artifact:
     description: 'Upload raw result as artifact for debugging'
     required: false

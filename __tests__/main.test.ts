@@ -96,6 +96,7 @@ beforeEach(async () => {
       'github-token': 'ghp_test',
       'timeout-seconds': '300',
       'file-filter': '**/*.sql',
+      'post-comment': 'true',
       'upload-artifact': 'false'
     }
     return inputs[name] ?? ''
@@ -293,6 +294,7 @@ describe('run()', () => {
           'github-token': 'ghp_test',
           'timeout-seconds': '300',
           'file-filter': '**/*.sql',
+          'post-comment': 'true',
           'upload-artifact': 'true'
         }
         return inputs[name] ?? ''
@@ -309,6 +311,37 @@ describe('run()', () => {
       expect(mockSetOutput).toHaveBeenCalledWith(
         'artifact-path',
         '/tmp/code-review-result.json'
+      )
+    })
+
+    it('skips posting when post-comment is false', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        const inputs: Record<string, string> = {
+          'backend-url': 'http://localhost:8080',
+          'api-key': 'test-key',
+          'github-token': 'ghp_test',
+          'timeout-seconds': '300',
+          'file-filter': '**/*.sql',
+          'post-comment': 'false',
+          'upload-artifact': 'false'
+        }
+        return inputs[name] ?? ''
+      })
+
+      mockFetchFilesForReview.mockResolvedValue({
+        files: [sampleFile],
+        skipped: []
+      })
+      mockCallReview.mockResolvedValue(reviewResponse())
+
+      await run()
+
+      expect(mockCallReview).toHaveBeenCalled()
+      expect(mockPostReview).not.toHaveBeenCalled()
+      expect(mockInfo).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '1 comment(s) suppressed across 1 file(s): src/app.ts'
+        )
       )
     })
 
@@ -432,6 +465,36 @@ describe('run()', () => {
 
       expect(mockSetFailed).toHaveBeenCalledWith('Reply failed: Backend error')
       expect(mockPostReply).not.toHaveBeenCalled()
+    })
+
+    it('skips posting reply when post-comment is false', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        const inputs: Record<string, string> = {
+          'backend-url': 'http://localhost:8080',
+          'api-key': 'test-key',
+          'github-token': 'ghp_test',
+          'timeout-seconds': '300',
+          'file-filter': '**/*.sql',
+          'post-comment': 'false',
+          'upload-artifact': 'false'
+        }
+        return inputs[name] ?? ''
+      })
+
+      mockGetCommentThread.mockResolvedValue({
+        thread: botThread,
+        path: 'src/main.ts'
+      })
+      mockGetFileForComment.mockResolvedValue(sampleFile)
+      mockCallReply.mockResolvedValue(replyResponse())
+
+      await run()
+
+      expect(mockCallReply).toHaveBeenCalled()
+      expect(mockPostReply).not.toHaveBeenCalled()
+      expect(mockInfo).toHaveBeenCalledWith(
+        'Skipping reply posting (post-comment is false)'
+      )
     })
 
     it('does not post reply when body is empty', async () => {

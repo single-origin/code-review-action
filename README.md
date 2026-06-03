@@ -45,6 +45,7 @@ jobs:
 | `github-token`    | No       | `github.token` | GitHub token for API calls                                              |
 | `timeout-seconds` | No       | `300`          | Backend request timeout in seconds                                      |
 | `file-filter`     | No       | `**/*.sql`     | Glob inclusion filter for file paths (only matching files are reviewed) |
+| `post-comment`    | No       | `true`         | Post review comments to the PR (set `false` to mute)                    |
 | `upload-artifact` | No       | `false`        | Upload raw result JSON as artifact for debugging                        |
 
 ## How It Works

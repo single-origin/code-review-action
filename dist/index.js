@@ -33537,6 +33537,7 @@ function getInputs() {
         githubToken: getInput('github-token', { required: true }),
         timeoutSeconds: parseInt(getInput('timeout-seconds') || '300', 10),
         fileFilter: getInput('file-filter'),
+        postComment: getInput('post-comment') !== 'false',
         uploadArtifact: getInput('upload-artifact') === 'true'
     };
 }
@@ -33585,7 +33586,18 @@ async function handlePullRequest(inputs) {
         return;
     }
     if (response.comments.length > 0) {
-        await postReview(octokit, owner, repo, pullNumber, response);
+        if (inputs.postComment) {
+            await postReview(octokit, owner, repo, pullNumber, response);
+        }
+        else {
+            const paths = response.comments.map((c) => c.path);
+            const uniquePaths = [...new Set(paths)];
+            let msg = `Skipping comment posting (post-comment is false). ${response.comments.length} comment(s) suppressed across ${uniquePaths.length} file(s): ${uniquePaths.join(', ')}`;
+            if (response.fileErrors.length > 0) {
+                msg += `. ${response.fileErrors.length} file error(s)`;
+            }
+            info(msg);
+        }
     }
     else {
         info('No review comments to post');
@@ -33637,8 +33649,13 @@ async function handleReviewComment(inputs) {
         return;
     }
     if (response.body) {
-        const rootId = thread.length > 0 ? thread[0].id : commentId;
-        await postReply(octokit, owner, repo, pullNumber, rootId, response.body);
+        if (inputs.postComment) {
+            const rootId = thread.length > 0 ? thread[0].id : commentId;
+            await postReply(octokit, owner, repo, pullNumber, rootId, response.body);
+        }
+        else {
+            info('Skipping reply posting (post-comment is false)');
+        }
     }
 }
 async function run() {

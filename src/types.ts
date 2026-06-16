@@ -25,6 +25,8 @@ export interface Repository {
 export interface PullRequest {
   number: number
   scope: ReviewScope
+  // GitHub login of the PR author
+  author: string
 }
 
 export interface ReviewFile {

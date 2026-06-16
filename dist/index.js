@@ -33568,7 +33568,8 @@ async function handlePullRequest(inputs) {
         repository: { fullName },
         pullRequest: {
             number: pullNumber,
-            scope: ReviewScope.FULL
+            scope: ReviewScope.FULL,
+            author: pr.user?.login ?? ''
         },
         files
     };
@@ -33626,7 +33627,8 @@ async function handleReviewComment(inputs) {
         repository: { fullName },
         pullRequest: {
             number: pullNumber,
-            scope: ReviewScope.FULL
+            scope: ReviewScope.FULL,
+            author: pr.user?.login ?? ''
         },
         file,
         thread

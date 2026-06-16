@@ -75,7 +75,8 @@ async function handlePullRequest(inputs: ActionInputs): Promise<void> {
     repository: { fullName },
     pullRequest: {
       number: pullNumber,
-      scope: ReviewScope.FULL
+      scope: ReviewScope.FULL,
+      author: pr.user?.login ?? ''
     },
     files
   }
@@ -161,7 +162,8 @@ async function handleReviewComment(inputs: ActionInputs): Promise<void> {
     repository: { fullName },
     pullRequest: {
       number: pullNumber,
-      scope: ReviewScope.FULL
+      scope: ReviewScope.FULL,
+      author: pr.user?.login ?? ''
     },
     file,
     thread

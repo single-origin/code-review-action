@@ -190,7 +190,8 @@ describe('run()', () => {
           repository: { fullName: 'test-owner/test-repo' },
           pullRequest: {
             number: prOpenedPayload.pull_request.number,
-            scope: ReviewScope.FULL
+            scope: ReviewScope.FULL,
+            author: prOpenedPayload.pull_request.user.login
           },
           files: [sampleFile]
         })

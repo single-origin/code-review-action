@@ -11,8 +11,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.SINGLEORIGIN_BOT_PAT }}
 
       - name: Validate semver tag
         run: |

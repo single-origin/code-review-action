@@ -42,7 +42,7 @@ Add secrets in Github UI.  Navigate to YourRepo → Settings → Secrets and Va
 
 #### SO_BACKEND_URL
 
-Set SO_BACKEND_URL to https://{yourcompanyname}-api.singleorigin.tech
+Set SO_BACKEND_URL to `https://{yourcompanyname}-api.singleorigin.tech`
 
 #### SO_API_KEY
 

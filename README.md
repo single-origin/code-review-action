@@ -36,6 +36,23 @@ jobs:
           api-key: ${{ secrets.SO_API_KEY }}
 ```
 
+### Configuring secrets
+
+Add secrets in Github UI.  Navigate to YourRepo → Settings → Secrets and Variables → Actions.
+
+#### SO_BACKEND_URL
+
+Set SO_BACKEND_URL to https://{yourcompanyname}-api.singleorigin.tech
+
+#### SO_API_KEY
+
+You can create an API key with these steps:
+
+- Login to the Single Origin UI, click on the user icon on the top right of the page, navigate to the Account page
+- Choose "Access Tokens"
+- Create an Access Token.  This will give you an {id} and {secret}.  Save these in a secure place.
+- To derive the string for SO_API_KEY, base64 encode the id and secret with the command `echo -n '{id}:{secret}' | base64`.  Make sure to pass the `-n` option to avoid a newline in the string.
+
 ## Inputs
 
 | Input             | Required | Default        | Description                                                             |

@@ -33278,6 +33278,10 @@ async function callReply(inputs, request) {
 
 const COMMENT_MARKER = '<!-- single-origin-code-review -->';
 const BOT_LOGIN = 'github-actions[bot]';
+// Review body posted when a review produced no inline comments. Posting a review
+// (rather than nothing) leaves a commit_id marker so the next incremental review
+// knows this commit was already reviewed.
+const NO_ISSUES_MESSAGE = 'No new issues found.';
 const GENERATED_PATTERNS = [
     'vendor/',
     'node_modules/',
@@ -33376,16 +33380,10 @@ async function limitConcurrency(tasks, limit) {
     await Promise.all(workers);
     return results;
 }
-async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, fileFilter) {
-    const allFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
-        owner,
-        repo,
-        pull_number: pullNumber,
-        per_page: 100
-    });
+async function buildReviewFiles(octokit, owner, repo, headSha, fileFilter, entries) {
     const skipped = [];
     const toFetch = [];
-    for (const file of allFiles) {
+    for (const file of entries) {
         const reason = shouldSkip(file, fileFilter);
         if (reason) {
             skipped.push({ filename: file.filename, reason });
@@ -33394,7 +33392,7 @@ async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, fi
             toFetch.push(file);
         }
     }
-    info(`Files: ${allFiles.length} total, ${toFetch.length} to review, ${skipped.length} skipped`);
+    info(`Files: ${entries.length} total, ${toFetch.length} to review, ${skipped.length} skipped`);
     const tasks = toFetch.map((file) => async () => {
         const content = await getFileContent(octokit, owner, repo, file.filename, headSha, file.sha ?? '');
         return {
@@ -33406,6 +33404,53 @@ async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, fi
     });
     const files = await limitConcurrency(tasks, CONCURRENCY_LIMIT);
     return { files, skipped };
+}
+// Full-PR review: every file changed between the base branch and the PR head.
+async function fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, fileFilter) {
+    const allFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100
+    });
+    return buildReviewFiles(octokit, owner, repo, headSha, fileFilter, allFiles);
+}
+// Incremental review: only the files changed between the last-reviewed commit and the
+// PR head, using GitHub's compare API (base...head three-dot semantics).
+async function fetchFilesForCompare(octokit, owner, repo, baseSha, headSha, fileFilter) {
+    const { data } = await octokit.rest.repos.compareCommits({
+        owner,
+        repo,
+        base: baseSha,
+        head: headSha
+    });
+    const entries = data.files ?? [];
+    const result = await buildReviewFiles(octokit, owner, repo, headSha, fileFilter, entries);
+    return {
+        ...result,
+        status: data.status,
+        incremental: data.status === 'ahead'
+    };
+}
+// The head SHA of the most recent review this action posted on the PR. Every review we
+// create is stamped by GitHub with the commit it was made against, so this is our record
+// of "what did we last review" without any server-side state. Returns null if we have
+// never reviewed this PR (first run / freshly enabled).
+async function getLastReviewedSha(octokit, owner, repo, pullNumber) {
+    const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100
+    });
+    // listReviews returns oldest-first; walk backwards to find our latest review.
+    for (let i = reviews.length - 1; i >= 0; i--) {
+        const review = reviews[i];
+        if (review.user?.login === BOT_LOGIN && review.commit_id) {
+            return review.commit_id;
+        }
+    }
+    return null;
 }
 async function getFileContent(octokit, owner, repo, path, ref, sha) {
     try {
@@ -33461,9 +33506,34 @@ function buildReviewBody(response) {
     }
     return body || undefined;
 }
+// Anchors (`path:line`) of inline comments this action has already posted on the PR. Used
+// to avoid re-posting a comment on a line we have commented on before, e.g. when a later
+// push re-touches a region the bot already flagged.
+async function getPostedCommentAnchors(octokit, owner, repo, pullNumber) {
+    const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, {
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100
+    });
+    const anchors = new Set();
+    for (const c of comments) {
+        const isOurs = c.user?.login === BOT_LOGIN || c.body.includes(COMMENT_MARKER);
+        if (isOurs && c.line != null) {
+            anchors.add(`${c.path}:${c.line}`);
+        }
+    }
+    return anchors;
+}
 async function postReview(octokit, owner, repo, pullNumber, response) {
-    const comments = mapCommentsForReview(response.comments);
-    const body = buildReviewBody(response);
+    const existing = await getPostedCommentAnchors(octokit, owner, repo, pullNumber);
+    const comments = mapCommentsForReview(response.comments).filter((c) => !existing.has(`${c.path}:${c.line}`));
+    // Always post a review so it records a commit_id marker (see getLastReviewedSha). When
+    // there is nothing to say, GitHub rejects an empty COMMENT review, so post a short body.
+    let body = buildReviewBody(response);
+    if (comments.length === 0 && !body) {
+        body = `${COMMENT_MARKER}\n${NO_ISSUES_MESSAGE}`;
+    }
     await octokit.rest.pulls.createReview({
         owner,
         repo,
@@ -33548,15 +33618,40 @@ async function handlePullRequest(inputs) {
         setFailed('No pull_request in event payload');
         return;
     }
-    if (context.payload.action === 'synchronize') {
-        info('Skipping synchronize event (not supported)');
-        return;
-    }
     const pullNumber = pr.number;
     const headSha = pr.head.sha;
     const fullName = `${owner}/${repo}`;
-    info(`Reviewing PR #${pullNumber} (${headSha})`);
-    const { files, skipped } = await fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, inputs.fileFilter);
+    const isSync = context.payload.action === 'synchronize';
+    // On a subsequent push (synchronize) review only what changed since our last review;
+    // otherwise (opened/reopened, or no prior review) review the full PR diff.
+    let scope = ReviewScope.FULL;
+    let result;
+    const sinceSha = isSync
+        ? await getLastReviewedSha(octokit, owner, repo, pullNumber)
+        : null;
+    if (sinceSha) {
+        const compare = await fetchFilesForCompare(octokit, owner, repo, sinceSha, headSha, inputs.fileFilter);
+        if (compare.incremental) {
+            scope = ReviewScope.INCREMENTAL;
+            result = compare;
+            info(`Incremental review of PR #${pullNumber} since ${sinceSha} (${headSha})`);
+        }
+        else {
+            info(`Compare status '${compare.status}' is not a clean delta; ` +
+                `full review of PR #${pullNumber} (${headSha})`);
+            result = await fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, inputs.fileFilter);
+        }
+    }
+    else {
+        if (isSync) {
+            info(`No prior review found; full review of PR #${pullNumber} (${headSha})`);
+        }
+        else {
+            info(`Reviewing PR #${pullNumber} (${headSha})`);
+        }
+        result = await fetchFilesForReview(octokit, owner, repo, pullNumber, headSha, inputs.fileFilter);
+    }
+    const { files, skipped } = result;
     if (skipped.length > 0) {
         info(`Skipped ${skipped.length} file(s)`);
     }
@@ -33568,7 +33663,7 @@ async function handlePullRequest(inputs) {
         repository: { fullName },
         pullRequest: {
             number: pullNumber,
-            scope: ReviewScope.FULL,
+            scope,
             author: pr.user?.login ?? ''
         },
         files
@@ -33585,12 +33680,9 @@ async function handlePullRequest(inputs) {
         setFailed(`Review failed: ${response.error}`);
         return;
     }
-    if (response.comments.length > 0) {
-        await postReview(octokit, owner, repo, pullNumber, response);
-    }
-    else {
-        info('No review comments to post');
-    }
+    // Always post a review — even with no comments — so it records a commit_id marker that
+    // getLastReviewedSha reads to bound the next incremental review.
+    await postReview(octokit, owner, repo, pullNumber, response);
     if (response.fileErrors.length > 0) {
         for (const e of response.fileErrors) {
             warning(`${e.filename}: ${e.error}`);

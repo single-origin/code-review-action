@@ -6,10 +6,13 @@ import { callReview, callReply } from './backend.js'
 import { shouldSkipComment } from './loop-prevention.js'
 import {
   fetchFilesForReview,
+  fetchFilesForCompare,
+  getLastReviewedSha,
   postReview,
   getCommentThread,
   getFileForComment,
-  postReply
+  postReply,
+  FetchResult
 } from './github.js'
 import {
   ActionInputs,
@@ -42,25 +45,68 @@ async function handlePullRequest(inputs: ActionInputs): Promise<void> {
     return
   }
 
-  if (github.context.payload.action === 'synchronize') {
-    core.info('Skipping synchronize event (not supported)')
-    return
-  }
-
   const pullNumber: number = pr.number
   const headSha: string = pr.head.sha
   const fullName = `${owner}/${repo}`
+  const isSync = github.context.payload.action === 'synchronize'
 
-  core.info(`Reviewing PR #${pullNumber} (${headSha})`)
+  // On a subsequent push (synchronize) review only what changed since our last review;
+  // otherwise (opened/reopened, or no prior review) review the full PR diff.
+  let scope = ReviewScope.FULL
+  let result: FetchResult
 
-  const { files, skipped } = await fetchFilesForReview(
-    octokit,
-    owner,
-    repo,
-    pullNumber,
-    headSha,
-    inputs.fileFilter
-  )
+  const sinceSha = isSync
+    ? await getLastReviewedSha(octokit, owner, repo, pullNumber)
+    : null
+
+  if (sinceSha) {
+    const compare = await fetchFilesForCompare(
+      octokit,
+      owner,
+      repo,
+      sinceSha,
+      headSha,
+      inputs.fileFilter
+    )
+    if (compare.incremental) {
+      scope = ReviewScope.INCREMENTAL
+      result = compare
+      core.info(
+        `Incremental review of PR #${pullNumber} since ${sinceSha} (${headSha})`
+      )
+    } else {
+      core.info(
+        `Compare status '${compare.status}' is not a clean delta; ` +
+          `full review of PR #${pullNumber} (${headSha})`
+      )
+      result = await fetchFilesForReview(
+        octokit,
+        owner,
+        repo,
+        pullNumber,
+        headSha,
+        inputs.fileFilter
+      )
+    }
+  } else {
+    if (isSync) {
+      core.info(
+        `No prior review found; full review of PR #${pullNumber} (${headSha})`
+      )
+    } else {
+      core.info(`Reviewing PR #${pullNumber} (${headSha})`)
+    }
+    result = await fetchFilesForReview(
+      octokit,
+      owner,
+      repo,
+      pullNumber,
+      headSha,
+      inputs.fileFilter
+    )
+  }
+
+  const { files, skipped } = result
 
   if (skipped.length > 0) {
     core.info(`Skipped ${skipped.length} file(s)`)
@@ -75,7 +121,7 @@ async function handlePullRequest(inputs: ActionInputs): Promise<void> {
     repository: { fullName },
     pullRequest: {
       number: pullNumber,
-      scope: ReviewScope.FULL,
+      scope,
       author: pr.user?.login ?? ''
     },
     files
@@ -98,11 +144,9 @@ async function handlePullRequest(inputs: ActionInputs): Promise<void> {
     return
   }
 
-  if (response.comments.length > 0) {
-    await postReview(octokit, owner, repo, pullNumber, response)
-  } else {
-    core.info('No review comments to post')
-  }
+  // Always post a review — even with no comments — so it records a commit_id marker that
+  // getLastReviewedSha reads to bound the next incremental review.
+  await postReview(octokit, owner, repo, pullNumber, response)
 
   if (response.fileErrors.length > 0) {
     for (const e of response.fileErrors) {

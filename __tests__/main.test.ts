@@ -56,6 +56,16 @@ const mockFetchFilesForReview =
   jest.fn<
     (...args: unknown[]) => Promise<{ files: ReviewFile[]; skipped: [] }>
   >()
+const mockFetchFilesForCompare = jest.fn<
+  (...args: unknown[]) => Promise<{
+    files: ReviewFile[]
+    skipped: []
+    status: string
+    incremental: boolean
+  }>
+>()
+const mockGetLastReviewedSha =
+  jest.fn<(...args: unknown[]) => Promise<string | null>>()
 const mockPostReview = jest.fn<(...args: unknown[]) => Promise<void>>()
 const mockGetCommentThread =
   jest.fn<
@@ -67,6 +77,8 @@ const mockPostReply = jest.fn<(...args: unknown[]) => Promise<void>>()
 
 jest.unstable_mockModule('../src/github.js', () => ({
   fetchFilesForReview: mockFetchFilesForReview,
+  fetchFilesForCompare: mockFetchFilesForCompare,
+  getLastReviewedSha: mockGetLastReviewedSha,
   postReview: mockPostReview,
   getCommentThread: mockGetCommentThread,
   getFileForComment: mockGetFileForComment,
@@ -206,17 +218,91 @@ describe('run()', () => {
       expect(mockSetFailed).not.toHaveBeenCalled()
     })
 
-    it('skips synchronize action without calling backend', async () => {
+    it('incrementally reviews a synchronize push using the last reviewed sha', async () => {
       mockContext.payload = structuredClone(prSyncPayload)
+      mockGetLastReviewedSha.mockResolvedValue('oldsha123')
+      mockFetchFilesForCompare.mockResolvedValue({
+        files: [sampleFile],
+        skipped: [],
+        status: 'ahead',
+        incremental: true
+      })
+      mockCallReview.mockResolvedValue(reviewResponse())
 
       await run()
 
-      expect(mockInfo).toHaveBeenCalledWith(
-        'Skipping synchronize event (not supported)'
+      expect(mockGetLastReviewedSha).toHaveBeenCalledWith(
+        expect.anything(),
+        'test-owner',
+        'test-repo',
+        prSyncPayload.pull_request.number
+      )
+      expect(mockFetchFilesForCompare).toHaveBeenCalledWith(
+        expect.anything(),
+        'test-owner',
+        'test-repo',
+        'oldsha123',
+        prSyncPayload.pull_request.head.sha,
+        '**/*.sql'
       )
       expect(mockFetchFilesForReview).not.toHaveBeenCalled()
-      expect(mockCallReview).not.toHaveBeenCalled()
-      expect(mockPostReview).not.toHaveBeenCalled()
+      expect(mockCallReview).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          pullRequest: expect.objectContaining({
+            scope: ReviewScope.INCREMENTAL
+          })
+        })
+      )
+      expect(mockPostReview).toHaveBeenCalled()
+    })
+
+    it('falls back to a full review on synchronize when there is no prior review', async () => {
+      mockContext.payload = structuredClone(prSyncPayload)
+      mockGetLastReviewedSha.mockResolvedValue(null)
+      mockFetchFilesForReview.mockResolvedValue({
+        files: [sampleFile],
+        skipped: []
+      })
+      mockCallReview.mockResolvedValue(reviewResponse())
+
+      await run()
+
+      expect(mockFetchFilesForCompare).not.toHaveBeenCalled()
+      expect(mockFetchFilesForReview).toHaveBeenCalled()
+      expect(mockCallReview).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          pullRequest: expect.objectContaining({ scope: ReviewScope.FULL })
+        })
+      )
+    })
+
+    it('falls back to a full review when the compare is not a clean delta', async () => {
+      mockContext.payload = structuredClone(prSyncPayload)
+      mockGetLastReviewedSha.mockResolvedValue('oldsha123')
+      mockFetchFilesForCompare.mockResolvedValue({
+        files: [],
+        skipped: [],
+        status: 'diverged',
+        incremental: false
+      })
+      mockFetchFilesForReview.mockResolvedValue({
+        files: [sampleFile],
+        skipped: []
+      })
+      mockCallReview.mockResolvedValue(reviewResponse())
+
+      await run()
+
+      expect(mockFetchFilesForCompare).toHaveBeenCalled()
+      expect(mockFetchFilesForReview).toHaveBeenCalled()
+      expect(mockCallReview).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          pullRequest: expect.objectContaining({ scope: ReviewScope.FULL })
+        })
+      )
     })
 
     it('exits early when no reviewable files found', async () => {
@@ -232,7 +318,7 @@ describe('run()', () => {
       expect(mockInfo).toHaveBeenCalledWith('No reviewable files found')
     })
 
-    it('does not post review when backend returns no comments', async () => {
+    it('posts a review even when backend returns no comments', async () => {
       mockFetchFilesForReview.mockResolvedValue({
         files: [sampleFile],
         skipped: []
@@ -243,8 +329,7 @@ describe('run()', () => {
 
       await run()
 
-      expect(mockPostReview).not.toHaveBeenCalled()
-      expect(mockInfo).toHaveBeenCalledWith('No review comments to post')
+      expect(mockPostReview).toHaveBeenCalled()
     })
 
     it('fails when backend returns FAILED with no comments', async () => {

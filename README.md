@@ -11,7 +11,7 @@ Add this workflow to your repository at `.github/workflows/review.yml`:
 name: Code Review
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize, reopened]
   pull_request_review_comment:
     types: [created]
 
@@ -38,7 +38,8 @@ jobs:
 
 ### Configuring secrets
 
-Add secrets in Github UI.  Navigate to YourRepo → Settings → Secrets and Variables → Actions.
+Add secrets in Github UI.  Navigate to YourRepo → Settings → Secrets and
+Variables → Actions.
 
 #### SO_BACKEND_URL
 
@@ -48,10 +49,14 @@ Set SO_BACKEND_URL to `https://{yourcompanyname}-api.singleorigin.tech`
 
 You can create an API key with these steps:
 
-- Login to the Single Origin UI, click on the user icon on the top right of the page, navigate to the Account page
+- Login to the Single Origin UI, click on the user icon on the top right of the
+  page, navigate to the Account page
 - Choose "Access Tokens"
-- Create an Access Token.  This will give you an {id} and {secret}.  Save these in a secure place.
-- To derive the string for SO_API_KEY, base64 encode the id and secret with the command `echo -n '{id}:{secret}' | base64`.  Make sure to pass the `-n` option to avoid a newline in the string.
+- Create an Access Token. This will give you an {id} and {secret}. Save these in
+  a secure place.
+- To derive the string for SO_API_KEY, base64 encode the id and secret with the
+  command `echo -n '{id}:{secret}' | base64`. Make sure to pass the `-n` option
+  to avoid a newline in the string.
 
 ## Inputs
 
@@ -68,11 +73,24 @@ You can create an API key with these steps:
 
 ### PR Review (`pull_request` event)
 
-1. Lists changed files via GitHub API (paginated)
+1. Determines review scope:
+   - `opened`/`reopened` (or a `synchronize` with no prior review) → **full**:
+     all files changed between the base branch and the PR head.
+   - `synchronize` with a prior review → **incremental**: only files changed
+     since the last review, via the compare API
+     (`GET /compare/{lastReviewedSha}...{head}`). Falls back to a full review if
+     the branch was force-pushed/rebased (compare status is not `ahead`).
 2. Filters out binary, deleted, and generated files
 3. Fetches full file content for each reviewable file
-4. Sends files to backend (`POST /api/v1/code-review/review`)
-5. Posts inline review comments on the PR
+4. Sends files to backend (`POST /api/v1/code-review/review`) with the scope
+5. Posts a review on the PR (inline comments, or "No new issues found" when
+   there are none), skipping any comment on a line the bot has already commented
+   on
+
+The last-reviewed commit is read back from GitHub itself: every review the
+action posts is stamped with its head commit, so a review is always posted (even
+with no comments) to leave that marker for the next incremental run. No
+server-side state is needed.
 
 ### Reply Threading (`pull_request_review_comment` event)
 
@@ -140,10 +158,3 @@ Test against your local backend using
 
 1. Copy `.env.example` to `.env` and fill in your values
 2. Run: `npm run local-action`
-
-## TODO
-
-- [ ] Incremental reviews: on `synchronize` events, use the compare API
-      (`GET /compare/{before}...{after}`) to send only newly changed files with
-      `REVIEW_SCOPE_INCREMENTAL`, and include existing bot comment threads for
-      context

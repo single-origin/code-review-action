@@ -1,7 +1,12 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
-import { COMMENT_MARKER, CONCURRENCY_LIMIT } from './constants.js'
+import {
+  BOT_LOGIN,
+  COMMENT_MARKER,
+  CONCURRENCY_LIMIT,
+  NO_ISSUES_MESSAGE
+} from './constants.js'
 import { shouldSkip } from './filters.js'
 import {
   ReviewComment,
@@ -21,12 +26,25 @@ type CreateReviewComment = NonNullable<
 type DiffEntry =
   RestEndpointMethodTypes['pulls']['listFiles']['response']['data'][number]
 
-interface FetchResult {
+type CompareFile = NonNullable<
+  RestEndpointMethodTypes['repos']['compareCommits']['response']['data']['files']
+>[number]
+
+export interface FetchResult {
   files: ReviewFile[]
   skipped: SkippedFile[]
 }
 
-function toReviewFileStatus(status: DiffEntry['status']): ReviewFileStatus {
+export interface CompareResult extends FetchResult {
+  // Comparison status reported by GitHub: 'ahead' | 'behind' | 'identical' | 'diverged'.
+  status: string
+  // True only when headSha is a linear descendant of the base (status 'ahead'), so the
+  // compare diff is exactly the commits pushed since the last review. Otherwise (force-push
+  // or rebase producing 'diverged', etc.) the caller should fall back to a full review.
+  incremental: boolean
+}
+
+function toReviewFileStatus(status: string): ReviewFileStatus {
   switch (status) {
     case 'added':
       return ReviewFileStatus.ADDED
@@ -64,25 +82,18 @@ async function limitConcurrency<T>(
   return results
 }
 
-export async function fetchFilesForReview(
+async function buildReviewFiles(
   octokit: Octokit,
   owner: string,
   repo: string,
-  pullNumber: number,
   headSha: string,
-  fileFilter?: string
+  fileFilter: string | undefined,
+  entries: (DiffEntry | CompareFile)[]
 ): Promise<FetchResult> {
-  const allFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
-    owner,
-    repo,
-    pull_number: pullNumber,
-    per_page: 100
-  })
-
   const skipped: SkippedFile[] = []
-  const toFetch: typeof allFiles = []
+  const toFetch: (DiffEntry | CompareFile)[] = []
 
-  for (const file of allFiles) {
+  for (const file of entries) {
     const reason = shouldSkip(file, fileFilter)
     if (reason) {
       skipped.push({ filename: file.filename, reason })
@@ -92,7 +103,7 @@ export async function fetchFilesForReview(
   }
 
   core.info(
-    `Files: ${allFiles.length} total, ${toFetch.length} to review, ${skipped.length} skipped`
+    `Files: ${entries.length} total, ${toFetch.length} to review, ${skipped.length} skipped`
   )
 
   const tasks = toFetch.map((file) => async (): Promise<ReviewFile> => {
@@ -114,6 +125,86 @@ export async function fetchFilesForReview(
 
   const files = await limitConcurrency(tasks, CONCURRENCY_LIMIT)
   return { files, skipped }
+}
+
+// Full-PR review: every file changed between the base branch and the PR head.
+export async function fetchFilesForReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  headSha: string,
+  fileFilter?: string
+): Promise<FetchResult> {
+  const allFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: 100
+  })
+  return buildReviewFiles(octokit, owner, repo, headSha, fileFilter, allFiles)
+}
+
+// Incremental review: only the files changed between the last-reviewed commit and the
+// PR head, using GitHub's compare API (base...head three-dot semantics).
+export async function fetchFilesForCompare(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  fileFilter?: string
+): Promise<CompareResult> {
+  const { data } = await octokit.rest.repos.compareCommits({
+    owner,
+    repo,
+    base: baseSha,
+    head: headSha
+  })
+  const entries = data.files ?? []
+  const result = await buildReviewFiles(
+    octokit,
+    owner,
+    repo,
+    headSha,
+    fileFilter,
+    entries
+  )
+  return {
+    ...result,
+    status: data.status,
+    incremental: data.status === 'ahead'
+  }
+}
+
+// The head SHA of the most recent review this action posted on the PR. Every review we
+// create is stamped by GitHub with the commit it was made against, so this is our record
+// of "what did we last review" without any server-side state. Returns null if we have
+// never reviewed this PR (first run / freshly enabled).
+export async function getLastReviewedSha(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<string | null> {
+  const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: 100
+  })
+
+  // listReviews returns oldest-first; walk backwards to find our latest review. Match on the
+  // embedded COMMENT_MARKER rather than the author login: BOT_LOGIN (github-actions[bot]) is
+  // shared by every action in the repo, so login alone would let another action's review set
+  // our incremental baseline. Only reviews we posted carry the marker.
+  for (let i = reviews.length - 1; i >= 0; i--) {
+    const review = reviews[i]
+    if (review.body?.includes(COMMENT_MARKER) && review.commit_id) {
+      return review.commit_id
+    }
+  }
+  return null
 }
 
 async function getFileContent(
@@ -186,6 +277,36 @@ export function buildReviewBody(response: ReviewResponse): string | undefined {
   return body || undefined
 }
 
+// Anchors (`path:line`) of inline comments this action has already posted on the PR. Used
+// to avoid re-posting a comment on a line we have commented on before, e.g. when a later
+// push re-touches a region the bot already flagged.
+async function getPostedCommentAnchors(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<Set<string>> {
+  const comments = await octokit.paginate(
+    octokit.rest.pulls.listReviewComments,
+    {
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 100
+    }
+  )
+
+  const anchors = new Set<string>()
+  for (const c of comments) {
+    const isOurs =
+      c.user?.login === BOT_LOGIN || c.body.includes(COMMENT_MARKER)
+    if (isOurs && c.line != null) {
+      anchors.add(`${c.path}:${c.line}`)
+    }
+  }
+  return anchors
+}
+
 export async function postReview(
   octokit: Octokit,
   owner: string,
@@ -193,8 +314,24 @@ export async function postReview(
   pullNumber: number,
   response: ReviewResponse
 ): Promise<void> {
-  const comments = mapCommentsForReview(response.comments)
-  const body = buildReviewBody(response)
+  const existing = await getPostedCommentAnchors(
+    octokit,
+    owner,
+    repo,
+    pullNumber
+  )
+  const comments = mapCommentsForReview(response.comments).filter(
+    (c) => !existing.has(`${c.path}:${c.line}`)
+  )
+
+  // Always post a review so it records a commit_id marker (see getLastReviewedSha). When
+  // there is nothing to say, GitHub rejects an empty COMMENT review, so post a short body.
+  // Every review body is stamped with COMMENT_MARKER so getLastReviewedSha can distinguish
+  // our reviews from those of other actions that also post as github-actions[bot].
+  const summary = buildReviewBody(response)
+  const inner =
+    comments.length === 0 && !summary ? NO_ISSUES_MESSAGE : (summary ?? '')
+  const body = `${COMMENT_MARKER}\n${inner}`
 
   await octokit.rest.pulls.createReview({
     owner,

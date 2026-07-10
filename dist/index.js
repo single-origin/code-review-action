@@ -33443,10 +33443,13 @@ async function getLastReviewedSha(octokit, owner, repo, pullNumber) {
         pull_number: pullNumber,
         per_page: 100
     });
-    // listReviews returns oldest-first; walk backwards to find our latest review.
+    // listReviews returns oldest-first; walk backwards to find our latest review. Match on the
+    // embedded COMMENT_MARKER rather than the author login: BOT_LOGIN (github-actions[bot]) is
+    // shared by every action in the repo, so login alone would let another action's review set
+    // our incremental baseline. Only reviews we posted carry the marker.
     for (let i = reviews.length - 1; i >= 0; i--) {
         const review = reviews[i];
-        if (review.user?.login === BOT_LOGIN && review.commit_id) {
+        if (review.body?.includes(COMMENT_MARKER) && review.commit_id) {
             return review.commit_id;
         }
     }
@@ -33530,10 +33533,11 @@ async function postReview(octokit, owner, repo, pullNumber, response) {
     const comments = mapCommentsForReview(response.comments).filter((c) => !existing.has(`${c.path}:${c.line}`));
     // Always post a review so it records a commit_id marker (see getLastReviewedSha). When
     // there is nothing to say, GitHub rejects an empty COMMENT review, so post a short body.
-    let body = buildReviewBody(response);
-    if (comments.length === 0 && !body) {
-        body = `${COMMENT_MARKER}\n${NO_ISSUES_MESSAGE}`;
-    }
+    // Every review body is stamped with COMMENT_MARKER so getLastReviewedSha can distinguish
+    // our reviews from those of other actions that also post as github-actions[bot].
+    const summary = buildReviewBody(response);
+    const inner = comments.length === 0 && !summary ? NO_ISSUES_MESSAGE : (summary ?? '');
+    const body = `${COMMENT_MARKER}\n${inner}`;
     await octokit.rest.pulls.createReview({
         owner,
         repo,
